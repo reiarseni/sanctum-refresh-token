@@ -1,0 +1,200 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast tier: the whole suite on in-memory SQLite, across the whole supported
+  # matrix. Most of what this package does is database-independent, and running
+  # it everywhere is what proves the matrix in composer.json is honest.
+  # ---------------------------------------------------------------------------
+  sqlite:
+    name: PHP ${{ matrix.php }} / Laravel ${{ matrix.laravel }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.2', '8.3', '8.4', '8.5']
+        laravel: ['11.*', '12.*', '13.*']
+        include:
+          - laravel: '11.*'
+            testbench: '9.*'
+          - laravel: '12.*'
+            testbench: '10.*'
+          - laravel: '13.*'
+            testbench: '11.*'
+        exclude:
+          # Laravel 13 requires PHP 8.3 or newer.
+          - php: '8.2'
+            laravel: '13.*'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require --no-interaction --no-update \
+            "laravel/framework:${{ matrix.laravel }}" \
+            "orchestra/testbench:${{ matrix.testbench }}"
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run the suite
+        run: vendor/bin/phpunit
+
+  # ---------------------------------------------------------------------------
+  # Integration tier: only the groups that a real server engine can prove.
+  # SQLite has no `SELECT ... FOR UPDATE`, so the decision this package rests on
+  # — that concurrent rotations serialise instead of forking the family — is
+  # untestable there and is proven here instead.
+  #
+  # MySQL 8.0 is deliberately absent: it left support in April 2026.
+  # ---------------------------------------------------------------------------
+  integration:
+    name: ${{ matrix.engine }} (concurrency, migrations)
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        engine: [mysql, pgsql]
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: testing
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -proot"
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: testing
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd=pg_isready
+          --health-interval=10s --health-timeout=5s --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_mysql, pdo_pgsql
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require --no-interaction --no-update \
+            "laravel/framework:12.*" "orchestra/testbench:10.*"
+          composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run the concurrency and migrations groups
+        env:
+          DB_CONNECTION: ${{ matrix.engine }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ matrix.engine == 'mysql' && '3306' || '5432' }}
+          DB_DATABASE: testing
+          DB_USERNAME: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
+          DB_PASSWORD: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
+        run: vendor/bin/phpunit --group concurrency,migrations
+
+      - name: Fail if every locking test skipped
+        env:
+          DB_CONNECTION: ${{ matrix.engine }}
+          DB_HOST: 127.0.0.1
+          DB_PORT: ${{ matrix.engine == 'mysql' && '3306' || '5432' }}
+          DB_DATABASE: testing
+          DB_USERNAME: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
+          DB_PASSWORD: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
+        run: |
+          set -euo pipefail
+
+          # A skip is the correct outcome on SQLite and a silent failure here:
+          # this tier exists precisely to run these tests for real.
+          output="$(vendor/bin/phpunit --group concurrency --do-not-cache-result)"
+          echo "$output"
+
+          if echo "$output" | grep -qi 'Skipped: '; then
+            echo "::error::The concurrency group skipped on ${{ matrix.engine }}; these tests must run here."
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------------------
+  # The lowest resolvable dependency set. A package whose constraints permit a
+  # combination it was never installed on is making a claim it has not checked.
+  # ---------------------------------------------------------------------------
+  lowest:
+    name: Lowest dependencies
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_sqlite, sqlite3
+          coverage: none
+
+      - name: Install the lowest allowed versions
+        run: composer update --prefer-lowest --prefer-dist --no-interaction --no-progress
+
+      - name: Run the suite
+        run: vendor/bin/phpunit
+
+  # ---------------------------------------------------------------------------
+  # Coverage. The threshold is a floor, not a target: it exists so that a pull
+  # request cannot quietly stop testing the security paths.
+  # ---------------------------------------------------------------------------
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_sqlite, sqlite3
+          coverage: xdebug
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run the suite with coverage
+        run: |
+          vendor/bin/phpunit \
+            --coverage-text \
+            --coverage-clover=build/logs/clover.xml \
+            --coverage-filter=src
+
+      - name: Enforce the minimum line coverage
+        run: php bin/check-coverage.php build/logs/clover.xml 80

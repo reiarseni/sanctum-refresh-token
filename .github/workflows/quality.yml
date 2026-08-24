@@ -1,0 +1,85 @@
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  phpstan:
+    name: Static analysis
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Run PHPStan
+        run: vendor/bin/phpstan analyse --no-progress
+
+  pint:
+    name: Code style
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: dom, curl, libxml, mbstring, zip
+          coverage: none
+
+      - name: Install dependencies
+        run: composer update --prefer-dist --no-interaction --no-progress
+
+      - name: Check the code style
+        run: vendor/bin/pint --test
+
+  attribution:
+    name: No AI attribution
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Assert no attribution markers in the tree or the history
+        run: |
+          set -euo pipefail
+
+          # Written as separated fragments so that this workflow file does not
+          # itself match the patterns it forbids.
+          markers="Co-Auth""ored-By|Generated with \[Claude|noreply@anthropic\.com|Co-authored-by: Claude"
+
+          failed=0
+
+          if git grep -InE "$markers" -- . ':!.github/workflows/quality.yml' ; then
+            echo "::error::Attribution markers found in the working tree."
+            failed=1
+          fi
+
+          if git log --format='%B' | grep -InE "$markers" ; then
+            echo "::error::Attribution markers found in the commit history."
+            failed=1
+          fi
+
+          if [ "$failed" -ne 0 ]; then
+            exit 1
+          fi
+
+          echo "No attribution markers found."
