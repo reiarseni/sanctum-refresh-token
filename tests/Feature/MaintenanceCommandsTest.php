@@ -260,6 +260,24 @@ final class MaintenanceCommandsTest extends TestCase
     }
 
     #[Test]
+    public function issuance_still_works_after_an_import(): void
+    {
+        $user = $this->createUser();
+        $this->seedD076Table($user->getKey(), $user->getMorphClass());
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'd076'])->assertSuccessful();
+
+        // Imported rows carry explicit ids, so the next auto-incremented id
+        // has to land clear of them. On PostgreSQL that needs the sequence
+        // realigned; getting it wrong makes the first login after a migration
+        // collide with an imported row.
+        $pair = $this->manager()->issue($user);
+
+        $this->assertSame(1, $pair->generation);
+        $this->assertSame(2, SanctumRefreshToken::query()->count());
+    }
+
+    #[Test]
     public function an_unrecognised_source_schema_fails_safely(): void
     {
         Schema::create('personal_refresh_tokens', function (Blueprint $table): void {

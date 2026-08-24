@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reiarseni\SanctumRefreshToken\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Database\Connection;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -191,9 +192,39 @@ class ImportCommand extends Command
             ]);
         }
 
+        if (! $dryRun && $imported > 0) {
+            $this->realignIdentitySequence($target->getTable());
+        }
+
         $this->report($dryRun, $imported, $skippedExpired, $skippedDuplicate, $skippedOrphan);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Move PostgreSQL's identity sequence past the ids the import just wrote.
+     *
+     * Imported rows carry explicit ids, because the id is what the user's
+     * existing plaintext token embeds. MySQL bumps AUTO_INCREMENT to match a
+     * manually inserted id; PostgreSQL leaves its sequence exactly where it
+     * was, so without this the very next issuance would try id 1 and collide
+     * with an imported row. Nothing to do on the other engines.
+     */
+    private function realignIdentitySequence(string $table): void
+    {
+        $connection = $this->connection();
+
+        if (! $connection instanceof Connection || $connection->getDriverName() !== 'pgsql') {
+            return;
+        }
+
+        // pg_get_serial_sequence resolves the sequence behind the column, so
+        // this holds whatever the table is named.
+        $connection->statement(
+            'SELECT setval(pg_get_serial_sequence(?, ?), COALESCE((SELECT MAX(id) FROM '
+            .$connection->getQueryGrammar()->wrapTable($table).'), 0) + 1, false)',
+            [$table, 'id'],
+        );
     }
 
     /**
