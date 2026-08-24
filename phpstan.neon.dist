@@ -1,0 +1,18 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 9
+    paths:
+        - src
+        - config
+        - database
+        # The test fixtures are analysed too, and only them: a trait nothing
+        # uses is a trait PHPStan skips, and these models are the one place the
+        # published traits are actually applied. The test bodies themselves are
+        # left out — at level 9 they drown in the framework's own loose return
+        # types (Application|null, PendingCommand|int) rather than in anything
+        # about this package.
+        - tests/Fixtures
+    tmpDir: build/phpstan
+    treatPhpDocTypesAsCertain: false

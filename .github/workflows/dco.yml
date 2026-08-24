@@ -1,0 +1,46 @@
+name: DCO
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Signed-off-by on every commit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out the pull request range
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Assert a Signed-off-by trailer on every commit
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          failed=0
+          for sha in $(git rev-list "$BASE_SHA".."$HEAD_SHA"); do
+            author="$(git show -s --format='%an <%ae>' "$sha")"
+            if ! git show -s --format='%(trailers:key=Signed-off-by,valueonly)' "$sha" \
+                 | grep -qxF "$author"; then
+              echo "::error::commit $sha has no Signed-off-by trailer matching its author ($author)"
+              git show -s --format='  %h %s' "$sha"
+              failed=1
+            fi
+          done
+
+          if [ "$failed" -ne 0 ]; then
+            echo
+            echo "Sign your commits with 'git commit -s', then amend or rebase to fix existing ones."
+            exit 1
+          fi
+
+          echo "Every commit in this pull request is signed off."

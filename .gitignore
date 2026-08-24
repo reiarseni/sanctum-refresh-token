@@ -1,0 +1,24 @@
+# Local agent and specification working directories
+.claude/
+openspec/
+
+# Reference clones kept for analysis only; never publish other people's repositories
+EXPERIMENT/
+EXPERIMENTS/
+
+# Composer
+vendor/
+composer.lock
+
+# Test caches and build output
+.phpunit.cache/
+.phpunit.result.cache
+build/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+
+# Environment files
+*.env*

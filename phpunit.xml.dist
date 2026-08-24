@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+         cacheDirectory=".phpunit.cache"
+         executionOrder="random"
+         failOnWarning="true"
+         failOnRisky="true"
+         failOnNotice="true"
+         beStrictAboutOutputDuringTests="true">
+    <!--
+        Two test groups are part of the CI contract and are selected by name
+        with the group option in the integration tier:
+
+          concurrency  tests that need real row-level locking; they skip with
+                       an explicit reason on connections without it
+          migrations   tests that exercise the published schema against a
+                       server engine rather than in-memory SQLite
+
+        The default run executes the whole suite, groups included.
+    -->
+    <testsuites>
+        <testsuite name="Unit">
+            <directory>tests/Unit</directory>
+        </testsuite>
+        <testsuite name="Feature">
+            <directory>tests/Feature</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>src</directory>
+        </include>
+    </source>
+</phpunit>
