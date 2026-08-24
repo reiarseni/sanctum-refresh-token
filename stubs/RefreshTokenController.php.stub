@@ -1,0 +1,124 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers\Auth;
+
+use App\Http\Controllers\Controller;
+use App\Models\User;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\ValidationException;
+use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
+use Reiarseni\SanctumRefreshToken\Exceptions\SanctumRefreshTokenException;
+use Reiarseni\SanctumRefreshToken\Http\Resources\SessionResource;
+use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
+use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
+
+/**
+ * A worked example of the four endpoints this package expects to sit behind.
+ *
+ * This file is yours: it was published into your application, not loaded from
+ * the package, and nothing updates it. Change the validation, the response
+ * shapes and the user lookup to match your API.
+ *
+ * The one part worth keeping as it is: the `refresh` method maps the package's
+ * machine-readable error codes onto HTTP status codes, and in particular maps
+ * `rotation_in_progress` to **409 Conflict**. That is the benign refresh race —
+ * your client sent two refreshes at once, or retried after a lost response —
+ * and a client should treat 409 as "wait for the refresh you already started",
+ * not as "log the user out". See docs/clients/ for implementations that do.
+ */
+class RefreshTokenController extends Controller
+{
+    public function __construct(private readonly RefreshTokenManager $manager) {}
+
+    /**
+     * Exchange credentials for a fresh token family.
+     */
+    public function login(Request $request): JsonResponse
+    {
+        $credentials = $request->validate([
+            'email' => ['required', 'email'],
+            'password' => ['required', 'string'],
+            'device_name' => ['nullable', 'string', 'max:100'],
+        ]);
+
+        $user = User::where('email', $credentials['email'])->first();
+
+        if ($user === null || ! Hash::check($credentials['password'], $user->password)) {
+            throw ValidationException::withMessages([
+                'email' => __('auth.failed'),
+            ]);
+        }
+
+        $pair = $this->manager->issue(
+            $user,
+            TokenConfig::make()->withName($credentials['device_name'] ?? null),
+        );
+
+        return response()->json($pair->toArray());
+    }
+
+    /**
+     * Exchange a refresh token for the next generation of its family.
+     */
+    public function refresh(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'refresh_token' => ['required', 'string'],
+        ]);
+
+        try {
+            $pair = $this->manager->rotate($validated['refresh_token']);
+        } catch (SanctumRefreshTokenException $e) {
+            return response()->json([
+                'error' => $e->errorCode(),
+                'message' => $e->getMessage(),
+            ], $this->statusFor($e->errorCode()));
+        }
+
+        return response()->json($pair->toArray());
+    }
+
+    /**
+     * End the session this request is authenticated by.
+     */
+    public function logout(Request $request): JsonResponse
+    {
+        $sessions = $request->user()->sessions();
+        $current = $sessions->current();
+
+        // Only this session ends. Use revokeAll() for a log-out-everywhere and
+        // revokeOthers() for the "sign out my other devices" button.
+        if ($current !== null) {
+            $sessions->revoke($current->familyUuid, RevocationReason::Logout);
+        }
+
+        return response()->json(['message' => 'Logged out.']);
+    }
+
+    /**
+     * The "your devices" list.
+     */
+    public function sessions(Request $request): JsonResponse
+    {
+        return response()->json([
+            'data' => SessionResource::collection($request->user()->sessions()->all()),
+        ]);
+    }
+
+    /**
+     * 409 for the benign race, 401 for everything else the client can recover
+     * from by authenticating again.
+     */
+    private function statusFor(string $code): int
+    {
+        return match ($code) {
+            'rotation_in_progress' => 409,
+            'abilities_escalation', 'context_mismatch' => 403,
+            default => 401,
+        };
+    }
+}
