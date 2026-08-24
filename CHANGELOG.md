@@ -30,4 +30,10 @@ versions.
   `sanctum-refresh:import`.
 - A publishable routes stub and controller, disabled by default.
 
+### Notes
+
+- Laravel 11 is supported and exercised in CI, but every 11.x release currently
+  carries unpatched security advisories and Composer's default policy refuses to
+  install the line. Prefer Laravel 12 or 13.
+
 [Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/commits/main

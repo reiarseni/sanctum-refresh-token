@@ -21,11 +21,8 @@
         The default run executes the whole suite, groups included.
     -->
     <testsuites>
-        <testsuite name="Unit">
-            <directory>tests/Unit</directory>
-        </testsuite>
-        <testsuite name="Feature">
-            <directory>tests/Feature</directory>
+        <testsuite name="Package">
+            <directory>tests</directory>
         </testsuite>
     </testsuites>
     <source>

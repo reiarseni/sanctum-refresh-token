@@ -88,6 +88,12 @@ php artisan migrate
 
 Requires PHP 8.2–8.5, Laravel 11/12/13 and `laravel/sanctum ^4.0`.
 
+> **A note on Laravel 11.** As of 24 August 2026 every 11.x release carries
+> unpatched security advisories, so Composer's default policy refuses to install
+> the line at all. The package still supports 11 and CI still exercises it, but
+> if you are on 11 you are running an advisory-blocked framework — upgrade to 12
+> or 13 rather than configuring your way past the block.
+
 > **If Sanctum is new to this application**, publish its own migration first —
 > recent Laravel skeletons ship without `personal_access_tokens`, and this
 > package stores access tokens in Sanctum's table, not its own:

@@ -49,6 +49,19 @@ jobs:
           extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_sqlite, sqlite3
           coverage: none
 
+      # Every Laravel 11 release (v11.0.0-v11.56.0) currently sits under
+      # security advisories with no patched version inside the 11.x line, so
+      # Composer's default policy refuses to install any of them. The package
+      # still declares support for 11, so this job unblocks the install rather
+      # than dropping the combination -- which means this row of the matrix is
+      # knowingly tested against a framework with unpatched advisories. It is
+      # scoped to Laravel 11 alone and applied nowhere else.
+      - name: Allow the advisory-blocked Laravel 11 line to resolve
+        if: matrix.laravel == '11.*'
+        run: |
+          composer config --no-plugins audit.block-insecure false || true
+          composer config --no-plugins policy.advisories.block false || true
+
       - name: Install dependencies
         run: |
           composer require --no-interaction --no-update \
@@ -161,6 +174,13 @@ jobs:
           php-version: '8.2'
           extensions: dom, curl, libxml, mbstring, zip, pcntl, sockets, pdo, pdo_sqlite, sqlite3
           coverage: none
+
+      # The lowest allowed set resolves to Laravel 11, which is advisory-blocked
+      # in its entirety; see the note on the sqlite job above.
+      - name: Allow the advisory-blocked Laravel 11 line to resolve
+        run: |
+          composer config --no-plugins audit.block-insecure false || true
+          composer config --no-plugins policy.advisories.block false || true
 
       - name: Install the lowest allowed versions
         run: composer update --prefer-lowest --prefer-dist --no-interaction --no-progress

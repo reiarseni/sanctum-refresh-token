@@ -62,9 +62,14 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Anchored to the start of a line, because that is what an actual
+          # trailer or attribution line looks like. Prose that names the
+          # forbidden trailer in order to forbid it -- CONTRIBUTING.md does
+          # exactly that -- is not a violation and must not fail the build.
+          #
           # Written as separated fragments so that this workflow file does not
           # itself match the patterns it forbids.
-          markers="Co-Auth""ored-By|Generated with \[Claude|noreply@anthropic\.com|Co-authored-by: Claude"
+          markers="^[[:space:]]*(Co-Auth""ored-By:|Co-auth""ored-by:|Generated with \[Claude|.*noreply@anthropic\.com)"
 
           failed=0
 
