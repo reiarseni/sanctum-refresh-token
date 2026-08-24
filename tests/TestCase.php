@@ -49,8 +49,32 @@ abstract class TestCase extends Orchestra
         $config = $app->make('config');
 
         $config->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
-        $config->set('database.default', 'testing');
         $config->set('cache.default', 'array');
+
+        // The integration CI tier runs this suite against MySQL and PostgreSQL
+        // by exporting DB_CONNECTION, because the locking behaviour the package
+        // rests on cannot be proven on SQLite. Honour it when it is set, and
+        // fall back to testbench's in-memory SQLite otherwise.
+        $connection = env('DB_CONNECTION', 'testing');
+
+        if (! is_string($connection) || $connection === '' || $connection === 'testing') {
+            $config->set('database.default', 'testing');
+
+            return;
+        }
+
+        $config->set('database.default', $connection);
+        $config->set("database.connections.{$connection}", array_merge(
+            (array) $config->get("database.connections.{$connection}", []),
+            array_filter([
+                'driver' => $connection,
+                'host' => env('DB_HOST'),
+                'port' => env('DB_PORT'),
+                'database' => env('DB_DATABASE'),
+                'username' => env('DB_USERNAME'),
+                'password' => env('DB_PASSWORD'),
+            ], static fn (mixed $value): bool => $value !== null),
+        ));
     }
 
     protected function defineDatabaseMigrations(): void

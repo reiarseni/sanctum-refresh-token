@@ -134,7 +134,7 @@ jobs:
           DB_DATABASE: testing
           DB_USERNAME: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
           DB_PASSWORD: ${{ matrix.engine == 'mysql' && 'root' || 'postgres' }}
-        run: vendor/bin/phpunit --group concurrency,migrations
+        run: vendor/bin/phpunit --group concurrency --group migrations
 
       - name: Fail if every locking test skipped
         env:
