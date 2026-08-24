@@ -88,6 +88,15 @@ php artisan migrate
 
 Requires PHP 8.2–8.5, Laravel 11/12/13 and `laravel/sanctum ^4.0`.
 
+> **If Sanctum is new to this application**, publish its own migration first —
+> recent Laravel skeletons ship without `personal_access_tokens`, and this
+> package stores access tokens in Sanctum's table, not its own:
+>
+> ```bash
+> php artisan install:api          # or: vendor:publish --tag=sanctum-migrations
+> php artisan migrate
+> ```
+
 Add the trait next to Sanctum's own:
 
 ```php
