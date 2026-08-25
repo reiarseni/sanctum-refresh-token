@@ -30,6 +30,18 @@ versions.
   `sanctum-refresh:import`.
 - A publishable routes stub and controller, disabled by default.
 
+### Fixed
+
+- Rotation now locks the whole token family rather than the presented row
+  alone, and re-reads under that lock. A replay and a legitimate rotation touch
+  different rows, so both could proceed: the revocation could commit before the
+  new generation existed to be revoked, leaving a live token in a family the
+  package had just declared compromised. Found by the concurrency group running
+  against PostgreSQL and MySQL.
+- Importing no longer leaves PostgreSQL's identity sequence behind the ids it
+  wrote, which would have made the first login after a migration collide with
+  an imported row.
+
 ### Notes
 
 - Laravel 11 is supported and exercised in CI, but every 11.x release currently

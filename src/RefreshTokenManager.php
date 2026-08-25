@@ -259,11 +259,37 @@ class RefreshTokenManager
      */
     private function attemptRotation(string $id, string $secret, ?array $requestedAbilities): TokenPair|SanctumRefreshTokenException
     {
-        $row = $this->query()->whereKey($id)->lockForUpdate()->first();
+        $row = $this->query()->whereKey($id)->first();
 
         // Unknown identifier and wrong secret produce the same refusal, so the
         // endpoint cannot be used to learn which identifiers exist.
         if ($row === null || ! TokenSecret::verify($secret, $row->token)) {
+            return RefreshTokenInvalidException::make();
+        }
+
+        // Lock the family, not just the presented row, and re-read afterwards.
+        //
+        // Locking one row is enough to stop two rotations of the *same* token
+        // from forking. It is not enough for reuse: a replay of generation N
+        // and a legitimate rotation of generation N+1 touch different rows, so
+        // both proceed, and the revocation can commit before the new generation
+        // the other transaction is creating exists to be revoked. That leaves a
+        // live token in a family the package has just declared compromised --
+        // exactly the credential the control is supposed to kill.
+        //
+        // The family is the unit of consistency, so it is the unit of locking.
+        $this->lockFamily($row->family_uuid);
+
+        // Re-read as a locking read, not a plain one. Under MySQL's default
+        // REPEATABLE READ a plain SELECT is answered from the snapshot the
+        // transaction opened with, so it would not see the revocation another
+        // transaction just committed while this one waited for the lock -- and
+        // this rotation would then append a generation to a family that has
+        // already been declared compromised. A locking read forces the current
+        // version on both engines.
+        $row = $this->query()->whereKey($id)->lockForUpdate()->first();
+
+        if ($row === null) {
             return RefreshTokenInvalidException::make();
         }
 
@@ -459,15 +485,37 @@ class RefreshTokenManager
     }
 
     /**
+     * Take an exclusive lock on every existing row of a family, in a stable
+     * order.
+     *
+     * Ordering by primary key matters: two transactions locking the same family
+     * acquire its rows in the same sequence, so they queue rather than deadlock.
+     */
+    private function lockFamily(string $familyUuid): void
+    {
+        $this->query()
+            ->where('family_uuid', $familyUuid)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    /**
      * Revoke every not-yet-revoked row of a family, and delete every access
      * token any of its generations minted.
      */
     private function revokeFamilyRows(string $familyUuid, RevocationReason $reason): bool
     {
+        // Whoever calls this outside a rotation has not locked the family yet.
+        // Locking here too is cheap and makes the revocation atomic against a
+        // rotation that is midway through appending a generation.
+        $this->lockFamily($familyUuid);
+
         /** @var list<RefreshToken> $rows */
         $rows = $this->query()
             ->where('family_uuid', $familyUuid)
             ->whereNull('revoked_at')
+            ->lockForUpdate()
             ->get()
             ->all();
 

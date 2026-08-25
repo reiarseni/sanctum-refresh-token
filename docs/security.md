@@ -33,7 +33,8 @@ a table with gaps in it rather than an image.
 | Rotation cannot widen a token's abilities | A01 Broken Access Control | `RotationTest::rotation_can_narrow_abilities_but_not_widen_them` |
 | Concurrent rotations serialise instead of forking the family | A01 Broken Access Control | `ConcurrencyTest::two_concurrent_rotations_of_the_same_token_do_not_fork_the_family` † |
 | A rotation racing a replay resolves to exactly one outcome | A01 Broken Access Control | `ConcurrencyTest::a_rotation_racing_a_replay_resolves_to_exactly_one_outcome` † |
-| A failure mid-rotation leaves no partial state | A04 Insecure Design | `RotationTest::a_failure_mid_rotation_leaves_no_partial_state` |
+| A generation created while a family is being revoked dies with it | A01 Broken Access Control | `ConcurrencyTest::a_rotation_racing_a_replay_resolves_to_exactly_one_outcome` † |
+| Rotation is atomic: a mid-rotation failure leaves nothing behind | A04 Insecure Design | `RotationAtomicityTest::a_failure_mid_rotation_leaves_no_partial_state` |
 | Cross-context isolation is an explicit check, not a global scope | A01 Broken Access Control | `IssuanceContextTest::isolation_does_not_depend_on_a_global_scope` |
 | An unresolvable context fails closed | A04 Insecure Design | `IssuanceContextTest::an_unresolvable_context_refuses_rather_than_allowing_rotation` |
 | A session belonging to another user cannot be revoked | A01 Broken Access Control | `SessionManagementTest::revoking_a_session_that_is_not_the_tokenables_is_refused` |
@@ -44,7 +45,7 @@ a table with gaps in it rather than an image.
 | Events never carry plaintext token material | A09 Logging and Alerting Failures | `RotationTest::rotation_dispatches_an_event_carrying_no_plaintext` |
 | Dependencies are resolved and tested at their lowest allowed versions | A06 Vulnerable and Outdated Components | CI job `lowest` in `.github/workflows/tests.yml` |
 
-† These two skip with an explicit reason on SQLite, which has no real
+† These skip with an explicit reason on SQLite, which has no real
 `SELECT ... FOR UPDATE`. They run for real against MySQL 8.4 and PostgreSQL 16
 in the integration CI tier, and that tier fails the build if they skip there.
 

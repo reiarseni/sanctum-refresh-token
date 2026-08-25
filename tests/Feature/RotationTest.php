@@ -23,7 +23,6 @@ use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
-use RuntimeException;
 
 final class RotationTest extends TestCase
 {
@@ -323,37 +322,6 @@ final class RotationTest extends TestCase
 
             return true;
         });
-    }
-
-    #[Test]
-    public function a_failure_mid_rotation_leaves_no_partial_state(): void
-    {
-        $user = $this->createUser();
-        $first = $this->manager()->issue($user);
-
-        $accessTokenId = SanctumRefreshToken::query()->firstOrFail()->access_token_id;
-
-        // Minting the replacement access token fails: the personal access token
-        // table is gone by the time the rotation reaches it.
-        Event::listen(
-            'eloquent.creating: '.Sanctum::personalAccessTokenModel(),
-            static function (): void {
-                throw new RuntimeException('minting failed');
-            },
-        );
-
-        try {
-            $this->manager()->rotate($first->refreshToken);
-            $this->fail('The rotation should have failed.');
-        } catch (RuntimeException $e) {
-            $this->assertSame('minting failed', $e->getMessage());
-        }
-
-        $consumed = SanctumRefreshToken::query()->firstOrFail();
-
-        $this->assertNull($consumed->rotated_at);
-        $this->assertSame(1, SanctumRefreshToken::query()->count());
-        $this->assertNotNull(Sanctum::personalAccessTokenModel()::query()->find($accessTokenId));
     }
 
     /**

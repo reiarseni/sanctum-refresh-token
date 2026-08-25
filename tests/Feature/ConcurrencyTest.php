@@ -28,6 +28,10 @@ final class ConcurrencyTest extends TestCase
 {
     protected function setUp(): void
     {
+        // Forked children open their own connections, so the data they rotate
+        // has to be committed rather than held in this process's transaction.
+        $this->needsCommittedData = true;
+
         parent::setUp();
 
         if (! $this->supportsRowLocking()) {
@@ -39,6 +43,16 @@ final class ConcurrencyTest extends TestCase
         }
 
         config(['sanctum-refresh-token.rotation.reuse_grace_period' => 0]);
+    }
+
+    protected function tearDown(): void
+    {
+        // Nothing rolls back for these, so they tidy up after themselves.
+        if ($this->needsCommittedData) {
+            $this->truncateTokenTables();
+        }
+
+        parent::tearDown();
     }
 
     #[Test]
@@ -84,19 +98,36 @@ final class ConcurrencyTest extends TestCase
         ]);
 
         $rows = SanctumRefreshToken::query()->where('family_uuid', $first->familyUuid)->get();
-        $revoked = $rows->whereNotNull('revoked_at')->count();
 
-        if ($revoked > 0) {
-            $this->assertSame(
-                $rows->count(),
-                $revoked,
-                'A detected reuse must revoke the family as a unit, not partially.',
+        // The replay of a consumed generation is always reuse here -- the grace
+        // window is zero -- so the family always ends up dead. What the race
+        // decides is only whether the legitimate rotation got its new
+        // generation in first, and that generation must die with the rest.
+        $this->assertSame(
+            $rows->count(),
+            $rows->whereNotNull('revoked_at')->count(),
+            'A detected reuse must revoke the family as a unit, not partially: '
+            .'a generation created while the revocation was running must not survive it.',
+        );
+
+        $this->assertContains(
+            'refresh_token_reused',
+            $outcomes,
+            'The replayed generation should have been recognised as reuse.',
+        );
+
+        // The other process either won the race or found the family already
+        // dead. Both are coherent; two successes, or a success alongside a
+        // surviving row, would not be.
+        $this->assertCount(2, $outcomes);
+
+        foreach ($outcomes as $outcome) {
+            $this->assertContains(
+                $outcome,
+                ['ok', 'refresh_token_reused', 'refresh_token_revoked'],
+                "Unexpected outcome [{$outcome}] from a rotation racing a replay.",
             );
-        } else {
-            $this->assertSame(3, $rows->max('generation'));
         }
-
-        $this->assertContains('ok', $outcomes + ['reuse']);
     }
 
     /**

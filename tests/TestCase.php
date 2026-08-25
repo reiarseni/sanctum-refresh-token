@@ -7,6 +7,7 @@ namespace Reiarseni\SanctumRefreshToken\Tests;
 use Illuminate\Contracts\Config\Repository;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\SanctumServiceProvider;
 use Orchestra\Testbench\TestCase as Orchestra;
@@ -16,6 +17,26 @@ use Reiarseni\SanctumRefreshToken\Tests\Fixtures\User;
 
 abstract class TestCase extends Orchestra
 {
+    // Against SQLite in memory each test already starts clean; against the
+    // MySQL and PostgreSQL of the integration tier the database persists, so
+    // without this the second test to create a user collides with the first.
+    // Aliased so the override below can still reach the trait's own
+    // implementation; parent:: does not resolve into a trait.
+    use RefreshDatabase {
+        beginDatabaseTransaction as protected beginTransactionForTest;
+    }
+
+    /**
+     * Whether this test needs its data committed rather than held in an open
+     * transaction.
+     *
+     * The concurrency tests fork real processes, and a forked child opens its
+     * own connection: anything sitting in this process's uncommitted
+     * transaction is invisible to it. Those tests therefore commit and clean up
+     * afterwards instead.
+     */
+    protected bool $needsCommittedData = false;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -75,6 +96,36 @@ abstract class TestCase extends Orchestra
                 'password' => env('DB_PASSWORD'),
             ], static fn (mixed $value): bool => $value !== null),
         ));
+    }
+
+    /**
+     * RefreshDatabase wraps each test in a transaction it never commits, which
+     * is right for almost every test here and wrong for the forking ones: a
+     * child process opens its own connection and cannot see uncommitted work.
+     *
+     * Those tests therefore skip the transaction and clean up by hand.
+     */
+    protected function beginDatabaseTransaction(): void
+    {
+        if ($this->needsCommittedData) {
+            $this->truncateTokenTables();
+
+            return;
+        }
+
+        $this->beginTransactionForTest();
+    }
+
+    /**
+     * Clear the tables a committed-data test writes to, before and after it.
+     */
+    protected function truncateTokenTables(): void
+    {
+        foreach ([SanctumRefreshToken::newRefreshToken()->getTable(), 'personal_access_tokens', 'users'] as $table) {
+            if (Schema::hasTable($table)) {
+                $this->app->make('db')->table($table)->delete();
+            }
+        }
     }
 
     protected function defineDatabaseMigrations(): void
