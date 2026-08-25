@@ -11,6 +11,7 @@ use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
+use Throwable;
 
 /**
  * The invariants the row lock exists to hold.
@@ -176,13 +177,23 @@ final class ConcurrencyTest extends TestCase
                 // Child: a forked process inherits the parent's connection, so
                 // it has to open its own or the two would not contend at all.
                 socket_close($pair[0]);
-                $this->app->make('db')->purge();
 
-                $result = $callable();
+                $result = 'child-failed';
 
-                socket_write($pair[1], $result);
-                socket_close($pair[1]);
+                try {
+                    $this->app->make('db')->purge();
+                    $result = $callable();
+                } catch (Throwable $e) {
+                    $result = 'threw:'.substr(str_replace("\n", ' ', $e->getMessage()), 0, 200);
+                } finally {
+                    socket_write($pair[1], $result);
+                    socket_close($pair[1]);
+                }
 
+                // Leave without unwinding: PHPUnit's shutdown handlers would
+                // otherwise run in the child and tear down the database the
+                // parent is still using, turning any child-side failure into a
+                // missing table in the parent.
                 exit(0);
             }
 
@@ -198,7 +209,7 @@ final class ConcurrencyTest extends TestCase
         $outcomes = [];
 
         foreach ($sockets as $socket) {
-            $outcomes[] = (string) socket_read($socket, 64);
+            $outcomes[] = (string) socket_read($socket, 512);
             socket_close($socket);
         }
 

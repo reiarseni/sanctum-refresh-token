@@ -12,7 +12,6 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Contracts\HasApiTokens;
 use Laravel\Sanctum\NewAccessToken;
@@ -69,12 +68,8 @@ use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
  */
 class RefreshTokenManager
 {
-    /**
-     * Cache of the "does this context column exist" probe, per column name.
-     *
-     * @var array<string, bool>
-     */
-    private array $contextColumnExists = [];
+    /** The generation whose row carries the family's lock. */
+    public const ANCHOR_GENERATION = 1;
 
     public function __construct(
         private readonly Container $container,
@@ -259,6 +254,11 @@ class RefreshTokenManager
      */
     private function attemptRotation(string $id, string $secret, ?array $requestedAbilities): TokenPair|SanctumRefreshTokenException
     {
+        // Read without a lock. This looks like a wasted query and is not: no
+        // row of a family may be locked before the family's anchor, or two
+        // transactions holding different generations deadlock waiting for each
+        // other. All this read does is identify the family and check the
+        // secret; the authoritative read happens under the anchor below.
         $row = $this->query()->whereKey($id)->first();
 
         // Unknown identifier and wrong secret produce the same refusal, so the
@@ -267,26 +267,20 @@ class RefreshTokenManager
             return RefreshTokenInvalidException::make();
         }
 
-        // Lock the family, not just the presented row, and re-read afterwards.
+        // Serialise on the family, not on the presented row.
         //
-        // Locking one row is enough to stop two rotations of the *same* token
-        // from forking. It is not enough for reuse: a replay of generation N
-        // and a legitimate rotation of generation N+1 touch different rows, so
-        // both proceed, and the revocation can commit before the new generation
-        // the other transaction is creating exists to be revoked. That leaves a
-        // live token in a family the package has just declared compromised --
-        // exactly the credential the control is supposed to kill.
-        //
-        // The family is the unit of consistency, so it is the unit of locking.
-        $this->lockFamily($row->family_uuid);
+        // Locking the presented row alone stops two rotations of the *same*
+        // token from forking, and nothing else: a replay of generation N and a
+        // rotation of generation N+1 touch different rows, so both proceed, and
+        // the revocation can commit before the generation the other transaction
+        // is creating exists to be revoked -- leaving a live token inside a
+        // family the package has just declared compromised.
+        $this->lockFamilyAnchor($row->family_uuid);
 
         // Re-read as a locking read, not a plain one. Under MySQL's default
         // REPEATABLE READ a plain SELECT is answered from the snapshot the
-        // transaction opened with, so it would not see the revocation another
-        // transaction just committed while this one waited for the lock -- and
-        // this rotation would then append a generation to a family that has
-        // already been declared compromised. A locking read forces the current
-        // version on both engines.
+        // transaction opened with, so it would not see a revocation another
+        // transaction committed while this one waited for the anchor.
         $row = $this->query()->whereKey($id)->lockForUpdate()->first();
 
         if ($row === null) {
@@ -451,7 +445,7 @@ class RefreshTokenManager
      */
     private function verifyContext(RefreshToken $row, Model $tokenable): ?ContextMismatchException
     {
-        if (! $this->contextResolvers->bindingEnabled() || ! $this->hasContextColumn()) {
+        if (! $this->contextResolvers->bindingEnabled()) {
             return null;
         }
 
@@ -485,19 +479,24 @@ class RefreshTokenManager
     }
 
     /**
-     * Take an exclusive lock on every existing row of a family, in a stable
-     * order.
+     * Take the family's exclusive lock.
      *
-     * Ordering by primary key matters: two transactions locking the same family
-     * acquire its rows in the same sequence, so they queue rather than deadlock.
+     * Generation 1 is the anchor: it exists for the whole life of the family,
+     * is never created twice, and is reachable by index. Locking it serialises
+     * every operation that mutates the family against every other, at the cost
+     * of one indexed row read -- where locking every generation cost one read
+     * per rotation the family had ever performed.
+     *
+     * Pruning exempts this row while any of its family is still rotatable, so
+     * a live family always has an anchor to lock.
      */
-    private function lockFamily(string $familyUuid): void
+    private function lockFamilyAnchor(string $familyUuid): void
     {
         $this->query()
             ->where('family_uuid', $familyUuid)
-            ->orderBy('id')
+            ->where('generation', self::ANCHOR_GENERATION)
             ->lockForUpdate()
-            ->get();
+            ->first();
     }
 
     /**
@@ -509,7 +508,7 @@ class RefreshTokenManager
         // Whoever calls this outside a rotation has not locked the family yet.
         // Locking here too is cheap and makes the revocation atomic against a
         // rotation that is midway through appending a generation.
-        $this->lockFamily($familyUuid);
+        $this->lockFamilyAnchor($familyUuid);
 
         /** @var list<RefreshToken> $rows */
         $rows = $this->query()
@@ -617,7 +616,7 @@ class RefreshTokenManager
             'user_agent_hash' => $this->metadata->prepare($this->currentUserAgent()),
         ]);
 
-        if ($context !== null && $this->hasContextColumn()) {
+        if ($context !== null) {
             $row->setAttribute($this->contextColumn(), $context);
         }
 
@@ -656,14 +655,15 @@ class RefreshTokenManager
     /**
      * The context recorded on a family is copied forward verbatim: rotation
      * never re-resolves it, or a user whose tenant changed would silently drag
-     * an old family into a new context.
+     * an old family into a new context. That holds whether or not binding is
+     * switched on today -- otherwise turning it off, rotating, and turning it
+     * back on would unbind every family that rotated in between.
+     *
+     * When the column is not in the schema Eloquent never hydrates it, so the
+     * absent attribute answers the question without asking the database.
      */
     private function carriedContext(RefreshToken $row): ?string
     {
-        if (! $this->hasContextColumn()) {
-            return null;
-        }
-
         $value = $row->getAttribute($this->contextColumn());
 
         return $value === null ? null : self::asString($value);
@@ -681,28 +681,6 @@ class RefreshTokenManager
     private function contextColumn(): string
     {
         return $this->settings->string('sanctum-refresh-token.context.column', 'context');
-    }
-
-    /**
-     * Whether the schema carries the issuance-context column.
-     *
-     * Deliberately independent of whether binding is switched on: a family
-     * recorded a context when it was opened, and rotation has to copy that
-     * value forward whatever the configuration says today. Gating this on the
-     * binding flag would mean that switching binding off, rotating, and
-     * switching it back on silently unbinds every family that rotated in
-     * between.
-     */
-    private function hasContextColumn(): bool
-    {
-        $column = $this->contextColumn();
-
-        // Keyed by column name: the name is configurable, and a cached answer
-        // for one column says nothing about another.
-        return $this->contextColumnExists[$column] ??= Schema::hasColumn(
-            SanctumRefreshToken::newRefreshToken()->getTable(),
-            $column,
-        );
     }
 
     /**

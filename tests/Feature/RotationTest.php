@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reiarseni\SanctumRefreshToken\Tests\Feature;
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\Test;
@@ -23,6 +24,7 @@ use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
+use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 
 final class RotationTest extends TestCase
 {
@@ -299,6 +301,61 @@ final class RotationTest extends TestCase
             SanctumRefreshToken::query()->whereNull('revoked_at')->count(),
             'A strict configuration should have revoked every row of the family.',
         );
+    }
+
+    #[Test]
+    public function rotation_cost_does_not_grow_with_family_depth(): void
+    {
+        $pair = $this->manager()->issue($this->createUser());
+
+        $shallow = $this->queriesToRotate($pair);
+
+        for ($i = 0; $i < 60; $i++) {
+            $pair = $this->manager()->rotate($pair->refreshToken);
+        }
+
+        $deep = $this->queriesToRotate($pair);
+
+        // Locking the whole family made this grow one row per generation, so a
+        // long-lived session degraded the busiest endpoint in the package.
+        $this->assertSame(
+            $shallow,
+            $deep,
+            'Rotating a deep family must cost the same as rotating a fresh one.',
+        );
+    }
+
+    #[Test]
+    public function rotation_issues_no_schema_introspection_query(): void
+    {
+        $pair = $this->manager()->issue($this->createUser());
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $this->manager()->rotate($pair->refreshToken);
+
+        // Schema introspection is invisible in development and expensive in
+        // production, where every request is a fresh process that re-runs it.
+        foreach (DB::getQueryLog() as $entry) {
+            $this->assertDoesNotMatchRegularExpression(
+                '/pragma|sqlite_master|information_schema|pg_catalog/i',
+                (string) $entry['query'],
+            );
+        }
+    }
+
+    /**
+     * The number of queries one rotation costs, leaving the pair advanced.
+     */
+    private function queriesToRotate(TokenPair &$pair): int
+    {
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $pair = $this->manager()->rotate($pair->refreshToken);
+
+        return count(DB::getQueryLog());
     }
 
     #[Test]
