@@ -10,6 +10,63 @@ versions.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-25
+
+### Changed — breaking
+
+- **`TokenConfig` is removed.** Per-issuance options are named arguments now:
+  `$manager->issue($user, name: "Rei's iPhone", abilities: ['orders:read'])`.
+  Same for `$user->issueTokenPair(...)`.
+- **The package refuses to boot when both `expiration.refresh_token` and
+  `expiration.family` are null.** That combination produces live rows with no
+  horizon, and a live row can never be pruned — deleting one would revoke a
+  credential somebody is still using. Set at least one.
+- **The retention indexes changed.** `(revoked_at, expires_at)` is replaced by
+  one index each on `revoked_at`, `expires_at` and `created_at`. Re-run
+  `php artisan migrate:fresh` on a development database, or drop and create the
+  indexes by hand on an existing one.
+
+### Fixed
+
+- **Rotation no longer slows down as a session ages.** It locked and hydrated
+  every generation of the family on every call, so latency grew with the age of
+  the session: 16.65 ms at generation 401 against 5.87 ms at generation 2, on
+  the busiest endpoint the package has. It now locks a single anchor row, and
+  the figure is flat at 3.38 ms.
+- **Schema introspection is gone from the rotation path.** It ran twice per
+  refresh in production, because a PHP-FPM process is new for each request and
+  cannot reuse what the last one learned.
+- **The prune predicate is served by an index.** The composite index it replaced
+  was never chosen — a disjunction cannot be served by an index whose leading
+  column is one of its terms — so pruning scanned the whole table. Measured on
+  two million rows: 889 buffers read against 3,605.
+- **Rows can no longer escape pruning.** A rotated row belonging to a family
+  configured without a token expiry carried neither `revoked_at` nor
+  `expires_at`, so no retention window could reach it. The predicate now covers
+  it by age.
+
+### Added
+
+- `prune.schedule` registers the prune command on Laravel's scheduler. Off by
+  default.
+- `security.revoke_on_password_reset` revokes every family a user holds when
+  Laravel's `PasswordReset` event fires. Off by default; usually worth turning
+  on. See `docs/sessions.md` for the three credential-change cases and which
+  applies when.
+- `sanctum-refresh:doctor` reports the row count and warns when rows have been
+  eligible for deletion longer than the retention window.
+- `docs/operations.md` documents the steady-state size of the table, with
+  figures measured against PostgreSQL rather than estimated.
+
+### Documentation
+
+- The README states the problem, the scope in both directions, install and use
+  in 857 words, against 1,541 opening with a comparison table. The comparison
+  and both migration guides move to `docs/comparison.md` and `docs/migrating/`,
+  complete and dated.
+- Prose comment in `src` is 14% of lines, against 30% by the raw measure before.
+  The rule was "why, not what".
+
 ## [0.1.0] - 2026-08-25
 
 ### Added
@@ -50,5 +107,6 @@ versions.
   carries unpatched security advisories and Composer's default policy refuses to
   install the line. Prefer Laravel 12 or 13.
 
-[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/reiarseni/sanctum-refresh-token/releases/tag/v0.1.0
