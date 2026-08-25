@@ -10,6 +10,8 @@ versions.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-25
+
 ### Added
 
 - Token families: every login opens a family, every rotation appends a
@@ -48,4 +50,5 @@ versions.
   carries unpatched security advisories and Composer's default policy refuses to
   install the line. Prefer Laravel 12 or 13.
 
-[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/commits/main
+[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/reiarseni/sanctum-refresh-token/releases/tag/v0.1.0
