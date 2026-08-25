@@ -10,6 +10,26 @@ versions.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-25
+
+### Added
+
+- `sanctum-refresh:import mohamedgaber` migrates from
+  `mohamedgaber-intake40/sanctum-refresh-token`, by a wide margin the most used
+  package in this space — 86,914 installs against 5,086 for the next one. It now
+  leads both the comparison table and the import command.
+
+  It works differently from the other two sources, and the difference matters.
+  That package stores no refresh tokens of its own: they are ordinary rows in
+  Sanctum's `personal_access_tokens`, marked with a `refresh` ability, and what
+  stops one authenticating a normal request is a callback its service provider
+  registers at boot. **Uninstall it and every refresh token it ever issued
+  becomes a full access token for every `auth:sanctum` route.** The import
+  therefore deletes each source row once it has imported it. Rows marked `auth`
+  — the application's real access tokens — are left untouched.
+- A migration guide at `docs/migrating/from-mohamedgaber.md`, including the
+  ordering: import before you uninstall, never after.
+
 ## [0.2.1] - 2026-08-25
 
 ### Added
@@ -146,7 +166,8 @@ versions.
   carries unpatched security advisories and Composer's default policy refuses to
   install the line. Prefer Laravel 12 or 13.
 
-[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.2...HEAD
+[0.2.2]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/reiarseni/sanctum-refresh-token/releases/tag/v0.1.0

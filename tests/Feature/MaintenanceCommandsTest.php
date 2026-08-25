@@ -7,6 +7,8 @@ namespace Reiarseni\SanctumRefreshToken\Tests\Feature;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
+use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
@@ -15,6 +17,7 @@ use Reiarseni\SanctumRefreshToken\Exceptions\RotationInProgressException;
 use Reiarseni\SanctumRefreshToken\Observability\GraceReplayRecorder;
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
+use Reiarseni\SanctumRefreshToken\Tests\Fixtures\User;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 
 final class MaintenanceCommandsTest extends TestCase
@@ -296,6 +299,86 @@ final class MaintenanceCommandsTest extends TestCase
         $this->assertSame(2, SanctumRefreshToken::query()->count());
     }
 
+    // ------------------------------------------- import: mohamedgaber
+
+    #[Test]
+    public function an_imported_mohamedgaber_token_rotates_without_a_re_login(): void
+    {
+        $user = $this->createUser();
+        $plaintext = $this->seedGaberToken($user, ['refresh']);
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'mohamedgaber'])->assertSuccessful();
+
+        $this->assertSame(2, $this->manager()->rotate($plaintext)->generation);
+    }
+
+    #[Test]
+    public function importing_mohamedgaber_removes_the_source_row(): void
+    {
+        $user = $this->createUser();
+        $this->seedGaberToken($user, ['refresh']);
+
+        $id = (int) Sanctum::personalAccessTokenModel()::query()->value('id');
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'mohamedgaber'])->assertSuccessful();
+
+        // Not tidiness. That package separates a refresh token from an access
+        // token with a runtime callback its service provider registers -- there
+        // is nothing in the schema. Remove the package and every refresh token
+        // it issued authenticates every auth:sanctum route.
+        $this->assertNull(
+            Sanctum::personalAccessTokenModel()::query()->find($id),
+            'A refresh token left in personal_access_tokens becomes a full access token '
+            .'the moment the source package is uninstalled.',
+        );
+    }
+
+    #[Test]
+    public function importing_mohamedgaber_leaves_real_access_tokens_alone(): void
+    {
+        $user = $this->createUser();
+        $this->seedGaberToken($user, ['refresh']);
+        $this->seedGaberToken($user, ['auth', 'orders:read']);
+
+        $access = Sanctum::personalAccessTokenModel()::query()
+            ->get()
+            ->first(static fn ($token): bool => in_array('auth', (array) $token->abilities, true));
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'mohamedgaber'])->assertSuccessful();
+
+        $this->assertNotNull(
+            Sanctum::personalAccessTokenModel()::query()->find($access->getKey()),
+            'The application\'s own access tokens must survive the migration untouched.',
+        );
+
+        $this->assertSame(1, SanctumRefreshToken::query()->count());
+    }
+
+    #[Test]
+    public function a_mohamedgaber_import_dry_run_writes_and_deletes_nothing(): void
+    {
+        $user = $this->createUser();
+        $this->seedGaberToken($user, ['refresh']);
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'mohamedgaber', '--dry-run' => true])
+            ->expectsOutputToContain('Dry run')
+            ->assertSuccessful();
+
+        $this->assertSame(0, SanctumRefreshToken::query()->count());
+        $this->assertSame(1, Sanctum::personalAccessTokenModel()::query()->count());
+    }
+
+    #[Test]
+    public function importing_mohamedgaber_skips_expired_tokens(): void
+    {
+        $user = $this->createUser();
+        $this->seedGaberToken($user, ['refresh'], Carbon::now()->subDay());
+
+        $this->artisan('sanctum-refresh:import', ['source' => 'mohamedgaber'])->assertSuccessful();
+
+        $this->assertSame(0, SanctumRefreshToken::query()->count());
+    }
+
     #[Test]
     public function an_unrecognised_source_schema_fails_safely(): void
     {
@@ -325,6 +408,34 @@ final class MaintenanceCommandsTest extends TestCase
         $this->artisan('sanctum-refresh:import', ['source' => 'albetnov'])
             ->expectsOutputToContain("package's own")
             ->assertFailed();
+    }
+
+    /**
+     * Seed one of mohamedgaber's tokens: a Sanctum access token wearing an
+     * ability that marks what it is for. Returns the plaintext its holder
+     * carries, in Sanctum's own `id|token` format.
+     *
+     * @param  list<string>  $abilities
+     */
+    private function seedGaberToken(User $user, array $abilities, ?Carbon $expiresAt = null): string
+    {
+        $secret = Str::random(40);
+
+        $model = Sanctum::personalAccessTokenModel();
+
+        // forceFill: Sanctum guards the morph columns against mass assignment.
+        $token = (new $model)->forceFill([
+            'tokenable_type' => $user->getMorphClass(),
+            'tokenable_id' => $user->getKey(),
+            'name' => 'api',
+            'token' => hash('sha256', $secret),
+            'abilities' => $abilities,
+            'expires_at' => $expiresAt ?? Carbon::now()->addDays(30),
+        ]);
+
+        $token->save();
+
+        return $token->getKey().'|'.$secret;
     }
 
     /**

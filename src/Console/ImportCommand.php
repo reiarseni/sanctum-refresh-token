@@ -31,11 +31,11 @@ use stdClass;
 class ImportCommand extends Command
 {
     protected $signature = 'sanctum-refresh:import
-                            {source : The package to import from: albetnov or d076}
+                            {source : The package to import from: mohamedgaber, d076 or albetnov}
                             {--table= : Override the source table name}
                             {--dry-run : Report what would be imported without writing}';
 
-    protected $description = 'Import live refresh tokens from albetnov/sanctum-refresh or D076/sanctum-refresh-tokens';
+    protected $description = 'Import live refresh tokens from another Sanctum refresh-token package';
 
     /**
      * The columns each supported source is recognised by.
@@ -43,13 +43,17 @@ class ImportCommand extends Command
      * @var array<string, array{table: string, columns: list<string>}>
      */
     private const SOURCES = [
-        'albetnov' => [
-            'table' => 'refresh_tokens',
-            'columns' => ['id', 'token_id', 'token', 'expires_at'],
+        'mohamedgaber' => [
+            'table' => 'personal_access_tokens',
+            'columns' => ['id', 'tokenable_type', 'tokenable_id', 'name', 'token', 'abilities', 'expires_at'],
         ],
         'd076' => [
             'table' => 'personal_refresh_tokens',
             'columns' => ['id', 'access_token_id', 'tokenable_type', 'tokenable_id', 'token', 'expires_at'],
+        ],
+        'albetnov' => [
+            'table' => 'refresh_tokens',
+            'columns' => ['id', 'token_id', 'token', 'expires_at'],
         ],
     ];
 
@@ -115,6 +119,10 @@ class ImportCommand extends Command
         $skippedExpired = 0;
         $skippedDuplicate = 0;
         $skippedOrphan = 0;
+        $retired = 0;
+
+        /** @var list<int> $retire */
+        $retire = [];
 
         $target = SanctumRefreshToken::newRefreshToken();
         $accessTokens = Sanctum::personalAccessTokenModel();
@@ -181,13 +189,31 @@ class ImportCommand extends Command
                 'created_at' => $row->created_at ?? $now,
                 'updated_at' => $now,
             ]);
+
+            if ($source === 'mohamedgaber') {
+                // Collected, not deleted here: the loop is reading this very
+                // table through an unbuffered cursor.
+                $retire[] = (int) $row->id;
+            }
+        }
+
+        // mohamedgaber's refresh tokens live in Sanctum's own table, and what
+        // stops one authenticating an ordinary request is a callback its
+        // service provider registers at runtime -- not anything in the schema.
+        // Uninstall that package and every refresh token it ever issued
+        // silently becomes a full access token.
+        //
+        // So the source rows go. The refresh tokens still work: this package
+        // resolves them from its own table, not from Sanctum's.
+        foreach (array_chunk($retire, 500) as $chunk) {
+            $retired += (int) $this->connection()->table($table)->whereIn('id', $chunk)->delete();
         }
 
         if (! $dryRun && $imported > 0) {
             $this->realignIdentitySequence($target->getTable());
         }
 
-        $this->report($dryRun, $imported, $skippedExpired, $skippedDuplicate, $skippedOrphan);
+        $this->report($dryRun, $imported, $skippedExpired, $skippedDuplicate, $skippedOrphan, $retired);
 
         return self::SUCCESS;
     }
@@ -223,6 +249,28 @@ class ImportCommand extends Command
      */
     private function identity(string $source, stdClass $row, string $accessTokens): ?array
     {
+        if ($source === 'mohamedgaber') {
+            // Its refresh tokens are Sanctum access tokens wearing an ability.
+            // Rows that are not marked `refresh` are the application's real
+            // access tokens and must be left exactly where they are.
+            if (! self::marksARefreshToken($row)) {
+                return null;
+            }
+
+            return [
+                (int) $row->id,
+                (string) $row->tokenable_type,
+                $row->tokenable_id,
+                // Its two tokens are independent rows with nothing linking
+                // them, so the family starts with no access token attached.
+                null,
+                is_scalar($row->name) ? (string) $row->name : 'Imported session',
+                // The source records only that this token may refresh; what the
+                // access token was allowed to do is nowhere in its schema.
+                ['*'],
+            ];
+        }
+
         if ($source === 'd076') {
             $abilities = property_exists($row, 'abilities') && is_string($row->abilities)
                 ? (array) json_decode($row->abilities, true)
@@ -261,6 +309,23 @@ class ImportCommand extends Command
     }
 
     /**
+     * Whether a Sanctum token row is one of mohamedgaber's refresh tokens.
+     *
+     * That package marks its tokens with abilities rather than storing them
+     * apart: `refresh` for a refresh token, `auth` for an access token.
+     */
+    private static function marksARefreshToken(stdClass $row): bool
+    {
+        $abilities = is_string($row->abilities) ? json_decode($row->abilities, true) : $row->abilities;
+
+        if (! is_array($abilities)) {
+            return false;
+        }
+
+        return in_array('refresh', $abilities, true) && ! in_array('auth', $abilities, true);
+    }
+
+    /**
      * @param  array<mixed>  $values
      * @return list<string>
      */
@@ -277,14 +342,18 @@ class ImportCommand extends Command
         return $strings === [] ? ['*'] : $strings;
     }
 
-    private function report(bool $dryRun, int $imported, int $expired, int $duplicate, int $orphan): void
+    private function report(bool $dryRun, int $imported, int $expired, int $duplicate, int $orphan, int $retired): void
     {
         $verb = $dryRun ? 'would be imported' : 'imported';
 
         $this->components->info(sprintf('%d token(s) %s as single-generation families.', $imported, $verb));
         $this->components->twoColumnDetail('Skipped, expired or revoked', (string) $expired);
         $this->components->twoColumnDetail('Skipped, already imported', (string) $duplicate);
-        $this->components->twoColumnDetail('Skipped, no tokenable', (string) $orphan);
+        $this->components->twoColumnDetail('Skipped, not a refresh token', (string) $orphan);
+
+        if ($retired > 0) {
+            $this->components->twoColumnDetail('Source rows removed from personal_access_tokens', (string) $retired);
+        }
 
         if ($dryRun) {
             $this->components->warn('Dry run: nothing was written.');

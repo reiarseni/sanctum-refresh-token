@@ -6,17 +6,18 @@ left to recognise a replay against. A stolen token simply gets refreshed
 forever, and the victim's own next refresh looks like an ordinary expired-token
 error.
 
-| | **this package** | [albetnov][a] | [D076][d] | [Mishanki][m] | [mohamedgaber][g] |
+| | **this package** | [mohamedgaber][g] | [D076][d] | [Mishanki][m] | [albetnov][a] |
 |---|---|---|---|---|---|
-| Rotates the refresh token on use | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Keeps the consumed token as evidence | ✅ | ❌ deletes it | ❌ deletes it | ❌ deletes it | ❌ never consumes it |
+| Monthly installs | new | 2,829 | 431 | 373 | 92 |
+| Rotates the refresh token on use | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Keeps the consumed token as evidence | ✅ | ❌ never consumes it | ❌ deletes it | ❌ deletes it | ❌ deletes it |
 | Detects replay of a consumed token | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Revokes the whole family on reuse | ✅ | ❌ | ❌ | ❌ | ❌ |
-| Tells a benign retry from an attack | ✅ grace window | ❌ | ❌ | ❌ | n/a |
-| Serialises concurrent refreshes | ✅ row lock | ❌ | ❌ | ❌ | n/a |
-| Revokes the superseded access token | ✅ | ✅ | ✅ | ✅ | ❌ |
-| Timing-safe token comparison | ✅ `hash_equals` | ❌ `!==` | ✅ `hash_equals` | ✅ `hash_equals` | n/a (Sanctum's) |
-| Secret from a CSPRNG | ✅ `random_bytes` | ❌ `Str::random` | ❌ `Str::random` | ❌ `Str::random` | n/a (Sanctum's) |
+| Tells a benign retry from an attack | ✅ grace window | n/a | ❌ | ❌ | ❌ |
+| Serialises concurrent refreshes | ✅ row lock | n/a | ❌ | ❌ | ❌ |
+| Revokes the superseded access token | ✅ | ❌ | ✅ | ✅ | ✅ |
+| Timing-safe token comparison | ✅ `hash_equals` | n/a (Sanctum's) | ✅ `hash_equals` | ✅ `hash_equals` | ❌ `!==` |
+| Secret from a CSPRNG | ✅ `random_bytes` | n/a (Sanctum's) | ❌ `Str::random` | ❌ `Str::random` | ❌ `Str::random` |
 | Sessions / "your devices" | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Tenant-bound tokens | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Import from another package | ✅ | ❌ | ❌ | ❌ | ❌ |
@@ -60,9 +61,14 @@ credential to stop working, it does not address that at all.</sub>
 
 Already running one of these? Neither migration logs anybody out.
 
-- [From `albetnov/sanctum-refresh`](migrating/from-albetnov.md)
+- [From `mohamedgaber-intake40/sanctum-refresh-token`](migrating/from-mohamedgaber.md) — **read this one before uninstalling anything**
 - [From `D076/sanctum-refresh-tokens`](migrating/from-d076.md)
+- [From `albetnov/sanctum-refresh`](migrating/from-albetnov.md)
 
 ```bash
-php artisan sanctum-refresh:import d076 --dry-run
+php artisan sanctum-refresh:import mohamedgaber --dry-run
 ```
+
+Download counts as of 25 August 2026: mohamedgaber 86,914, D076 5,086,
+Mishanki 4,593, albetnov 1,827 — which is why the most-used one leads both the
+table and the import command.

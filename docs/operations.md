@@ -157,12 +157,20 @@ write on a hot path.
 Nobody has to be logged out to switch.
 
 ```bash
-php artisan sanctum-refresh:import d076 --dry-run
-php artisan sanctum-refresh:import d076
+php artisan sanctum-refresh:import mohamedgaber --dry-run
+php artisan sanctum-refresh:import mohamedgaber
 
-php artisan sanctum-refresh:import albetnov --dry-run
+php artisan sanctum-refresh:import d076
 php artisan sanctum-refresh:import albetnov
 ```
+
+**`mohamedgaber` is different and needs reading about first.** That package
+keeps its refresh tokens in Sanctum's own `personal_access_tokens`, marked with
+an ability, and separates them from access tokens with a runtime callback rather
+than with anything in the schema. Uninstall it and every refresh token it issued
+becomes a full access token. The import therefore **deletes each source row**
+after importing it, and there is a [migration guide](migrating/from-mohamedgaber.md)
+that explains the ordering.
 
 Each live source token becomes a single-generation family here, preserving the
 hash, the tokenable and the expiry — so the refresh token a user is already
