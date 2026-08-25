@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace Reiarseni\SanctumRefreshToken\Tests\Feature;
 
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Str;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\Attributes\Test;
 use Reiarseni\SanctumRefreshToken\Exceptions\RefreshTokenReusedException;
@@ -68,24 +66,21 @@ final class MigrationsTest extends TestCase
     {
         $table = SanctumRefreshToken::newRefreshToken()->getTable();
 
-        $this->manager()->issue($this->createUser());
+        // Read from the schema rather than provoking a duplicate insert.
+        // Forcing the constraint to fire is not portable: PostgreSQL aborts the
+        // surrounding transaction on any error, and MySQL invalidates the
+        // savepoint that would otherwise contain it, so the test would poison
+        // whatever ran after it on one engine or the other.
+        $unique = collect(Schema::getIndexes($table))
+            ->filter(static fn (array $index): bool => (bool) ($index['unique'] ?? false))
+            ->flatMap(static fn (array $index): array => $index['columns'] ?? [])
+            ->all();
 
-        $row = SanctumRefreshToken::query()->firstOrFail();
-
-        // A duplicate hash must be impossible at the storage layer, not merely
-        // improbable at the application layer.
-        $this->expectException(QueryException::class);
-
-        $this->app->make('db')->table($table)->insert([
-            'family_uuid' => (string) Str::uuid(),
-            'tokenable_type' => $row->tokenable_type,
-            'tokenable_id' => $row->tokenable_id,
-            'name' => 'Duplicate',
-            'token' => $row->token,
-            'generation' => 1,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $this->assertContains(
+            'token',
+            $unique,
+            'The token hash must be unique at the storage layer, not merely improbable in the application.',
+        );
     }
 
     #[Test]

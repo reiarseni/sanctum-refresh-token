@@ -24,6 +24,7 @@ a table with gaps in it rather than an image.
 | Verification uses `hash_equals`, not `===` | A02 Cryptographic Failures | `TokenSecurityTest::verification_is_timing_safe_and_rejects_a_wrong_secret` |
 | Unknown identifier and wrong secret are indistinguishable | A01 Broken Access Control | `RotationTest::a_wrong_secret_is_indistinguishable_from_an_unknown_identifier` |
 | A malformed token is rejected before any secret verification | A01 Broken Access Control | `TokenSecurityTest::a_malformed_token_is_rejected_without_a_secret_verification` |
+| Duplicate token hashes are impossible at the storage layer | A02 Cryptographic Failures | `MigrationsTest::the_token_column_is_unique` |
 | No exception message echoes the presented token | A09 Logging and Alerting Failures | `RotationTest::assertRefusedWith` (asserted on every refusal path) |
 | The token hash and metadata hashes are hidden from serialisation | A02 Cryptographic Failures | `TokenSecurityTest::the_token_column_is_hidden_from_serialisation` |
 | Replaying a consumed token revokes the whole family | A07 Authentication Failures | `ReuseDetectionTest::a_replay_outside_the_grace_window_kills_the_whole_family` |
