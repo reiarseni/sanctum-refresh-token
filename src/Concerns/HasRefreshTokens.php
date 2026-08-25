@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Reiarseni\SanctumRefreshToken\Concerns;
 
+use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
@@ -11,7 +12,6 @@ use Reiarseni\SanctumRefreshToken\Models\RefreshToken;
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Sessions\SessionManager;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 
 /**
@@ -41,10 +41,24 @@ trait HasRefreshTokens
 
     /**
      * Open a family and mint its first pair.
+     *
+     * @param  list<string>|null  $abilities
      */
-    public function issueTokenPair(?TokenConfig $config = null): TokenPair
-    {
-        return app(RefreshTokenManager::class)->issue($this, $config);
+    public function issueTokenPair(
+        ?string $name = null,
+        ?array $abilities = null,
+        ?DateTimeInterface $accessTokenExpiresAt = null,
+        ?DateTimeInterface $refreshTokenExpiresAt = null,
+        ?DateTimeInterface $familyExpiresAt = null,
+    ): TokenPair {
+        return app(RefreshTokenManager::class)->issue(
+            $this,
+            $name,
+            $abilities,
+            $accessTokenExpiresAt,
+            $refreshTokenExpiresAt,
+            $familyExpiresAt,
+        );
     }
 
     /**

@@ -17,7 +17,6 @@ use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\Fixtures\User;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 use Reiarseni\SanctumRefreshToken\ValueObjects\Session;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 
 final class SessionManagementTest extends TestCase
 {
@@ -62,7 +61,7 @@ final class SessionManagementTest extends TestCase
     public function a_session_object_exposes_the_documented_shape(): void
     {
         $user = $this->createUser();
-        $this->manager()->issue($user, TokenConfig::make()->withName('Rei\'s iPhone'));
+        $this->manager()->issue($user, name: 'Rei\'s iPhone');
 
         $session = $user->sessions()->all()->first();
 
@@ -159,7 +158,7 @@ final class SessionManagementTest extends TestCase
     public function a_session_can_be_renamed(): void
     {
         $user = $this->createUser();
-        $pair = $this->manager()->issue($user, TokenConfig::make()->withName('Old name'));
+        $pair = $this->manager()->issue($user, name: 'Old name');
 
         $renamed = $user->sessions()->rename($pair->familyUuid, 'Work laptop');
 
@@ -187,7 +186,7 @@ final class SessionManagementTest extends TestCase
         config(['sanctum-refresh-token.session.max_label_length' => 10]);
 
         $user = $this->createUser();
-        $pair = $this->manager()->issue($user, TokenConfig::make()->withName('Fine'));
+        $pair = $this->manager()->issue($user, name: 'Fine');
 
         foreach (['a much longer label than allowed', "control\x00character"] as $invalid) {
             try {
@@ -206,7 +205,7 @@ final class SessionManagementTest extends TestCase
     {
         $this->expectException(InvalidSessionLabelException::class);
 
-        $this->manager()->issue($this->createUser(), TokenConfig::make()->withName("bad\x07label"));
+        $this->manager()->issue($this->createUser(), name: "bad\x07label");
     }
 
     #[Test]
@@ -348,7 +347,7 @@ final class SessionManagementTest extends TestCase
     public function the_resource_emits_the_documented_fields_and_leaks_nothing(): void
     {
         $user = $this->createUser();
-        $this->manager()->issue($user, TokenConfig::make()->withName('Work laptop'));
+        $this->manager()->issue($user, name: 'Work laptop');
 
         $session = $user->sessions()->all()->first();
         $row = SanctumRefreshToken::query()->firstOrFail();

@@ -14,7 +14,6 @@ use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\Fixtures\PlainModel;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 
 final class IssuanceTest extends TestCase
 {
@@ -131,8 +130,7 @@ final class IssuanceTest extends TestCase
         $explicit = Carbon::now()->addDays(3)->startOfSecond();
 
         $pair = $this->manager()->issue(
-            $this->createUser(),
-            TokenConfig::make()->withRefreshTokenExpiresAt($explicit),
+            $this->createUser(), refreshTokenExpiresAt: $explicit,
         );
 
         $this->assertTrue($explicit->eq($pair->refreshTokenExpiresAt));
@@ -153,8 +151,7 @@ final class IssuanceTest extends TestCase
     public function abilities_are_persisted_at_issuance(): void
     {
         $this->manager()->issue(
-            $this->createUser(),
-            TokenConfig::make()->withAbilities(['orders:read', 'orders:write']),
+            $this->createUser(), abilities: ['orders:read', 'orders:write'],
         );
 
         $this->assertSame(
@@ -215,6 +212,38 @@ final class IssuanceTest extends TestCase
         }
 
         $this->assertSame(0, SanctumRefreshToken::query()->whereNotNull('revoked_at')->count());
+    }
+
+    #[Test]
+    public function every_issuance_option_is_settable_by_name_and_optional(): void
+    {
+        $user = $this->createUser();
+
+        $accessAt = Carbon::now()->addMinutes(5)->startOfSecond();
+        $refreshAt = Carbon::now()->addDays(2)->startOfSecond();
+        $familyAt = Carbon::now()->addDays(9)->startOfSecond();
+
+        $pair = $this->manager()->issue(
+            $user,
+            name: 'Work laptop',
+            abilities: ['orders:read'],
+            accessTokenExpiresAt: $accessAt,
+            refreshTokenExpiresAt: $refreshAt,
+            familyExpiresAt: $familyAt,
+        );
+
+        $row = SanctumRefreshToken::query()->firstOrFail();
+
+        $this->assertSame('Work laptop', $row->name);
+        $this->assertSame(['orders:read'], $row->abilities);
+        $this->assertTrue($accessAt->eq($pair->accessTokenExpiresAt));
+        $this->assertTrue($refreshAt->eq($pair->refreshTokenExpiresAt));
+        $this->assertTrue($familyAt->eq($pair->familyExpiresAt));
+
+        // And every one of them is optional.
+        $bare = $this->manager()->issue($user);
+
+        $this->assertNotSame('', $bare->refreshToken);
     }
 
     #[Test]

@@ -41,7 +41,6 @@ use Reiarseni\SanctumRefreshToken\Observability\GraceReplayRecorder;
 use Reiarseni\SanctumRefreshToken\Support\MetadataHasher;
 use Reiarseni\SanctumRefreshToken\Support\Settings;
 use Reiarseni\SanctumRefreshToken\Support\TokenSecret;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 
 /**
@@ -83,25 +82,37 @@ class RefreshTokenManager
     /**
      * Open a new token family and mint its first pair.
      *
+     * Everything after the tokenable is an optional override of the published
+     * configuration, and is meant to be passed by name:
+     *
+     *     $manager->issue($user, name: "Rei's iPhone", abilities: ['orders:read']);
+     *
+     * @param  list<string>|null  $abilities
+     *
      * @throws InvalidTokenableException when the model cannot hold Sanctum tokens
      * @throws InvalidSessionLabelException when the session label is unusable
      */
-    public function issue(Model $tokenable, ?TokenConfig $tokenConfig = null): TokenPair
-    {
+    public function issue(
+        Model $tokenable,
+        ?string $name = null,
+        ?array $abilities = null,
+        ?DateTimeInterface $accessTokenExpiresAt = null,
+        ?DateTimeInterface $refreshTokenExpiresAt = null,
+        ?DateTimeInterface $familyExpiresAt = null,
+    ): TokenPair {
         if (! SanctumRefreshToken::isTokenable($tokenable)) {
             throw InvalidTokenableException::missingHasApiTokens($tokenable::class);
         }
 
-        $tokenConfig ??= TokenConfig::make();
         $now = Carbon::now();
 
-        $name = $this->validateLabel($tokenConfig->name ?? $this->defaultLabel());
-        $abilities = $tokenConfig->abilities ?? $this->defaultAbilities();
+        $name = $this->validateLabel($name ?? $this->defaultLabel());
+        $abilities = $abilities === null ? $this->defaultAbilities() : array_values($abilities);
 
-        $accessExpiresAt = $this->resolveExpiry($tokenConfig->accessTokenExpiresAt, 'access_token', $now);
-        $refreshExpiresAt = $this->resolveExpiry($tokenConfig->refreshTokenExpiresAt, 'refresh_token', $now);
-        $familyExpiresAt = $tokenConfig->familyExpiresAt !== null
-            ? Carbon::instance($tokenConfig->familyExpiresAt)
+        $accessExpiresAt = $this->resolveExpiry($accessTokenExpiresAt, 'access_token', $now);
+        $refreshExpiresAt = $this->resolveExpiry($refreshTokenExpiresAt, 'refresh_token', $now);
+        $familyExpiresAt = $familyExpiresAt !== null
+            ? Carbon::instance($familyExpiresAt)
             : $this->resolveExpiry(null, 'family', $now);
 
         $context = $this->resolveContext();

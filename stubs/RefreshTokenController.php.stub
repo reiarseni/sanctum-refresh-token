@@ -14,7 +14,6 @@ use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
 use Reiarseni\SanctumRefreshToken\Exceptions\SanctumRefreshTokenException;
 use Reiarseni\SanctumRefreshToken\Http\Resources\SessionResource;
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 
 /**
  * A worked example of the four endpoints this package expects to sit behind.
@@ -54,8 +53,7 @@ class RefreshTokenController extends Controller
         }
 
         $pair = $this->manager->issue(
-            $user,
-            TokenConfig::make()->withName($credentials['device_name'] ?? null),
+            $user, name: $credentials['device_name'] ?? null,
         );
 
         return response()->json($pair->toArray());

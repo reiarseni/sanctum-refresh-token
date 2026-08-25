@@ -23,7 +23,6 @@ use Reiarseni\SanctumRefreshToken\Exceptions\SanctumRefreshTokenException;
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 
 final class RotationTest extends TestCase
@@ -84,8 +83,7 @@ final class RotationTest extends TestCase
     public function abilities_are_carried_forward_unchanged(): void
     {
         $first = $this->manager()->issue(
-            $this->createUser(),
-            TokenConfig::make()->withAbilities(['orders:read', 'orders:write']),
+            $this->createUser(), abilities: ['orders:read', 'orders:write'],
         );
 
         $this->manager()->rotate($first->refreshToken);
@@ -103,8 +101,7 @@ final class RotationTest extends TestCase
     public function rotation_can_narrow_abilities_but_not_widen_them(): void
     {
         $first = $this->manager()->issue(
-            $this->createUser(),
-            TokenConfig::make()->withAbilities(['orders:read', 'orders:write']),
+            $this->createUser(), abilities: ['orders:read', 'orders:write'],
         );
 
         $narrowed = $this->manager()->rotate($first->refreshToken, ['orders:read']);
