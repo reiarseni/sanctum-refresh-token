@@ -9,6 +9,7 @@ use Illuminate\Support\Carbon;
 use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
 use Reiarseni\SanctumRefreshToken\Observability\GraceReplayRecorder;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
+use Reiarseni\SanctumRefreshToken\Support\Settings;
 
 /**
  * Reports why token families are dying.
@@ -27,7 +28,7 @@ class DoctorCommand extends Command
 
     protected $description = 'Report token family mortality broken down by revocation reason';
 
-    public function handle(GraceReplayRecorder $graceReplays): int
+    public function handle(GraceReplayRecorder $graceReplays, Settings $settings): int
     {
         $days = max(1, (int) $this->option('days'));
         $since = Carbon::now()->subDays($days);
@@ -53,20 +54,59 @@ class DoctorCommand extends Command
 
         $this->table(['Revocation reason', 'Families'], $rows);
 
-        if (! $graceReplays->enabled()) {
+        if ($graceReplays->enabled()) {
+            $this->components->twoColumnDetail(
+                'Grace-period replays',
+                (string) $graceReplays->countSince($since),
+            );
+        } else {
             $this->components->warn(
                 'Grace-period replays are not being recorded; enable '
                 .'sanctum-refresh-token.observability.record_grace_replays to include them.',
             );
-
-            return self::SUCCESS;
         }
 
-        $this->components->twoColumnDetail(
-            'Grace-period replays',
-            (string) $graceReplays->countSince($since),
-        );
+        $this->reportStorage($settings);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Nobody notices a token table until it is too large to fix quickly, and
+     * pruning is off by default -- so an unpruned table is otherwise
+     * indistinguishable from a busy one until it is a problem.
+     */
+    private function reportStorage(Settings $settings): void
+    {
+        $total = SanctumRefreshToken::query()->count();
+
+        $this->newLine();
+        $this->components->twoColumnDetail('Rows in the token table', number_format($total));
+
+        $retention = $settings->int('sanctum-refresh-token.prune.retention_days', 7);
+        $cutoff = Carbon::now()->subDays($retention);
+
+        $overdue = SanctumRefreshToken::query()
+            ->where(fn ($query) => $query
+                ->where(fn ($revoked) => $revoked->whereNotNull('revoked_at')->where('revoked_at', '<', $cutoff))
+                ->orWhere(fn ($expired) => $expired->whereNotNull('expires_at')->where('expires_at', '<', $cutoff)))
+            ->count();
+
+        $this->components->twoColumnDetail('Rows eligible for pruning', number_format($overdue));
+
+        if ($overdue === 0) {
+            return;
+        }
+
+        $scheduled = $settings->nullableString('sanctum-refresh-token.prune.schedule');
+
+        $this->components->warn(sprintf(
+            '%s row(s) have been terminal for more than %d day(s). Run sanctum-refresh:prune%s',
+            number_format($overdue),
+            $retention,
+            $scheduled === null || $scheduled === '' || $scheduled === 'false'
+                ? ', or set sanctum-refresh-token.prune.schedule to run it automatically.'
+                : '.',
+        ));
     }
 }

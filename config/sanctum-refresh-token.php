@@ -145,6 +145,14 @@ return [
 
     'prune' => [
         'retention_days' => 7,
+
+        /*
+         | Register the prune command on Laravel's scheduler. false leaves the
+         | scheduler untouched; a frequency method ('daily', 'hourly', ...) or a
+         | cron expression registers it. Off by default -- but a table nobody
+         | prunes grows forever, and `sanctum-refresh:doctor` will say so.
+         */
+        'schedule' => false,
     ],
 
 ];

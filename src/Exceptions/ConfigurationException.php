@@ -43,6 +43,15 @@ final class ConfigurationException extends SanctumRefreshTokenException
         ));
     }
 
+    public static function noLifetimeHorizon(): self
+    {
+        return new self(
+            'Both sanctum-refresh-token.expiration.refresh_token and .family are null, '
+            .'so issued tokens would never expire and their rows could never be pruned -- '
+            .'deleting a live row would log its holder out. Set at least one of them.',
+        );
+    }
+
     public static function missingApplicationKey(): self
     {
         return new self(

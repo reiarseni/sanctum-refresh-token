@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Reiarseni\SanctumRefreshToken\Console;
 
+use Closure;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Reiarseni\SanctumRefreshToken\Models\RefreshToken;
+use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
 use Reiarseni\SanctumRefreshToken\Support\Settings;
 
@@ -70,21 +74,61 @@ class PruneCommand extends Command
     }
 
     /**
-     * Terminal rows whose terminal timestamp is older than the cutoff.
+     * Rows that have reached a terminal state and passed the retention window.
+     *
+     * Age is part of the predicate, not a nicety: a rotated row belonging to a
+     * family configured without a token expiry carries neither `revoked_at` nor
+     * `expires_at`, and without `created_at` no retention window could ever
+     * reach it.
      *
      * @return Builder<RefreshToken>
      */
     private function candidates(Carbon $cutoff): Builder
     {
-        return SanctumRefreshToken::query()->where(function (Builder $query) use ($cutoff): void {
-            $query
-                ->where(fn (Builder $revoked) => $revoked
-                    ->whereNotNull('revoked_at')
-                    ->where('revoked_at', '<', $cutoff))
-                ->orWhere(fn (Builder $expired) => $expired
-                    ->whereNotNull('expires_at')
-                    ->where('expires_at', '<', $cutoff));
-        });
+        return SanctumRefreshToken::query()
+            ->where(function (Builder $query) use ($cutoff): void {
+                $query
+                    ->where(fn (Builder $revoked) => $revoked
+                        ->whereNotNull('revoked_at')
+                        ->where('revoked_at', '<', $cutoff))
+                    ->orWhere(fn (Builder $expired) => $expired
+                        ->whereNotNull('expires_at')
+                        ->where('expires_at', '<', $cutoff))
+                    ->orWhere(fn (Builder $old) => $old
+                        ->whereNotNull('rotated_at')
+                        ->whereNull('expires_at')
+                        ->where('created_at', '<', $cutoff));
+            })
+            ->where(fn (Builder $query) => $query
+                ->where('generation', '!=', RefreshTokenManager::ANCHOR_GENERATION)
+                ->orWhereNotExists($this->familyStillLive()));
+    }
+
+    /**
+     * A correlated existence check for any rotatable row in the same family.
+     *
+     * The anchor row carries the lock every rotation of the family takes, so
+     * deleting it while the family is alive would leave live generations with
+     * nothing to serialise against. Once the family holds nothing rotatable,
+     * the anchor is prunable like any other row.
+     *
+     * @return Closure(QueryBuilder): void
+     */
+    private function familyStillLive(): Closure
+    {
+        $table = SanctumRefreshToken::newRefreshToken()->getTable();
+        $now = Carbon::now();
+
+        return static function (QueryBuilder $query) use ($table, $now): void {
+            $query->select(DB::raw('1'))
+                ->from($table.' as anchor_family')
+                ->whereColumn('anchor_family.family_uuid', $table.'.family_uuid')
+                ->whereNull('anchor_family.rotated_at')
+                ->whereNull('anchor_family.revoked_at')
+                ->where(fn (QueryBuilder $live) => $live
+                    ->whereNull('anchor_family.expires_at')
+                    ->orWhere('anchor_family.expires_at', '>', $now));
+        };
     }
 
     private function retentionDays(): int

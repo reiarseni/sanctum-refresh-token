@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Reiarseni\SanctumRefreshToken;
 
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository as Config;
 use Illuminate\Support\ServiceProvider;
 use Reiarseni\SanctumRefreshToken\Console\DoctorCommand;
 use Reiarseni\SanctumRefreshToken\Console\ImportCommand;
 use Reiarseni\SanctumRefreshToken\Console\PruneCommand;
 use Reiarseni\SanctumRefreshToken\Context\ContextResolverFactory;
+use Reiarseni\SanctumRefreshToken\Exceptions\ConfigurationException;
 use Reiarseni\SanctumRefreshToken\Sessions\SessionManager;
 use Reiarseni\SanctumRefreshToken\Support\Identifier;
 use Reiarseni\SanctumRefreshToken\Support\MetadataHasher;
@@ -61,11 +63,43 @@ class SanctumRefreshTokenServiceProvider extends ServiceProvider
             __DIR__.'/../stubs/RefreshTokenController.php.stub' => app_path('Http/Controllers/Auth/RefreshTokenController.php'),
         ], 'sanctum-refresh-token-routes');
 
+        $this->registerSchedule(new Settings($this->app->make('config')));
+
         $this->commands([
             PruneCommand::class,
             DoctorCommand::class,
             ImportCommand::class,
         ]);
+    }
+
+    /**
+     * Register pruning on the scheduler, when asked to.
+     *
+     * Off by default. The package's own README promises it will not do work
+     * nobody asked for, and although pruning terminal rows logs nobody out, a
+     * package that starts writing to the scheduler by surprise is a package
+     * that surprises someone during an incident. `sanctum-refresh:doctor`
+     * reports when this being off has let the table grow.
+     */
+    private function registerSchedule(Settings $settings): void
+    {
+        $frequency = $settings->nullableString('sanctum-refresh-token.prune.schedule');
+
+        if ($frequency === null || $frequency === '' || $frequency === 'false') {
+            return;
+        }
+
+        $this->callAfterResolving(Schedule::class, static function (Schedule $schedule) use ($frequency): void {
+            $event = $schedule->command('sanctum-refresh:prune');
+
+            if (method_exists($event, $frequency)) {
+                $event->{$frequency}();
+            } else {
+                $event->cron($frequency);
+            }
+
+            $event->onOneServer();
+        });
     }
 
     /**
@@ -79,8 +113,18 @@ class SanctumRefreshTokenServiceProvider extends ServiceProvider
         $column = $config->get('sanctum-refresh-token.context.column', 'context');
         Identifier::assertSafe(is_string($column) ? $column : '', 'sanctum-refresh-token.context.column');
 
+        $settings = new Settings($config);
+
+        // A live row can never be pruned -- deleting it revokes a credential
+        // somebody is still using -- so every family needs a horizon of some
+        // kind, or the table grows without any bound an operator can fix.
+        if ($settings->nullableInt('sanctum-refresh-token.expiration.refresh_token') === null
+            && $settings->nullableInt('sanctum-refresh-token.expiration.family') === null) {
+            throw ConfigurationException::noLifetimeHorizon();
+        }
+
         TokenSecret::assertSafeLength(
-            (new Settings($config))->int(
+            $settings->int(
                 'sanctum-refresh-token.security.secret_bytes',
                 TokenSecret::MINIMUM_BYTES,
                 // No floor: a value below the minimum has to reach the check
