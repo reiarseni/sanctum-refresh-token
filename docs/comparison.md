@@ -19,6 +19,7 @@ error.
 | Timing-safe token comparison | ✅ `hash_equals` | n/a (Sanctum's) | ✅ `hash_equals` | ✅ `hash_equals` | ❌ `!==` |
 | Secret from a CSPRNG | ✅ `random_bytes` | n/a (Sanctum's) | ❌ `Str::random` | ❌ `Str::random` | ❌ `Str::random` |
 | Sessions / "your devices" | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Revoking one device actually ends it | ✅ | ❌ its refresh token survives | ✅ | ✅ | ✅ |
 | Tenant-bound tokens | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Import from another package | ✅ | ❌ | ❌ | ❌ | ❌ |
 
@@ -33,24 +34,52 @@ compares hashes with `!==` at `Helpers.php:74`; `D076` calls
 deletes at `Trait/AuthTokens.php:59` and `:93`. `Str::random` is seeded from
 `random_bytes` in modern Laravel, so those tokens are not weak — but the choice
 is the framework's, not the package's, and none of the three enforces a minimum
-length.
+length.</sub>
 
-**`mohamedgaber-intake40/sanctum-refresh-token`** (v3.0, 24 September 2024, 45
-stars) takes a different approach and belongs in a different column. It has no
-table of its own: it adds an `expired_at` column to Sanctum's
-`personal_access_tokens` and marks tokens with abilities — `auth` for an access
-token, `refresh` for a refresh token — then guards which routes each may reach.
-The whole package is a thirty-line trait plus a route guard.
+## The most used one, in detail
 
-That is a clean idea and it is not refresh token rotation. There is no rotation:
-`grep -rn 'delete\|revoke' src/` returns nothing, so presenting a refresh token
-mints a new access token and **leaves the refresh token untouched and reusable
-until it expires**. There is nothing consumed, so there is nothing to replay and
-nothing to detect. A stolen refresh token works for its whole lifetime.
+**`mohamedgaber-intake40/sanctum-refresh-token`** (v3.0, September 2024) is the
+most used package here by a wide margin and belongs in a different column. It
+stores nothing of its own: a refresh token is an ordinary row in Sanctum's
+`personal_access_tokens` marked with the ability `refresh` instead of `auth`,
+and a route guard decides which may reach what. The whole package is 102 lines.
 
-If what you want is short-lived access tokens with a longer-lived renewal
-credential and no more, it does that in very little code. If you want a stolen
-credential to stop working, it does not address that at all.</sub>
+Its defaults are 60 minutes for an access token and 180 for a refresh token, and
+its tokens *are* revocable — they are Sanctum tokens, so `$user->tokens()->delete()`
+works. Four things it does not do:
+
+**It does not rotate.** `grep -rn 'delete\|revoke' src/` returns nothing.
+Presenting a refresh token mints a new access token and leaves the refresh token
+untouched and reusable. Nothing is consumed, so nothing can be replayed, so a
+leaked refresh token works for its whole lifetime and nobody finds out.
+
+**Its safety is the 180, not the design.** Three hours is a shift, not a session.
+The moment you raise that number to get the long sessions refresh tokens exist
+for — two weeks, say — you have a fortnight-long non-rotating credential, and the
+change is one number in a config file with no warning and no visible difference.
+
+**It has no notion of a session.** Each login writes two independent rows with
+nothing linking them but the `name` the developer passed, which in its own
+examples is `'api'` for both. A "your devices" screen shows every session twice,
+and two devices with the same name are indistinguishable. There is no IP and no
+user agent — Sanctum records neither.
+
+**And "sign out this device" does not.** Delete the access token and its refresh
+token survives, independent and untouched; the device refreshes and is back in.
+Ending a session there means deleting both rows, and nothing in the schema tells
+you which two they are.
+
+One more, which matters when leaving: what separates a refresh token from an
+access token is a callback its service provider registers at boot, not anything
+in the database. Uninstall it and every refresh token it ever issued becomes a
+full access token. [The migration guide](migrating/from-mohamedgaber.md) covers
+the ordering, and `sanctum-refresh:import mohamedgaber` deletes the source rows
+for exactly this reason.
+
+If short-lived access tokens with a slightly longer renewal credential are all
+you need, it does that in very little code and its defaults are sound. If you
+need sessions that last, sessions you can see and end, or a leaked credential to
+stop working, it does not address any of them.
 
 [a]: https://github.com/albetnov/sanctum-refresh
 [g]: https://github.com/mohamedgaber-intake40/sanctum-refresh-token
