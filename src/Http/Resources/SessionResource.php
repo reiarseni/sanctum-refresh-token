@@ -9,12 +9,9 @@ use Illuminate\Http\Resources\Json\JsonResource;
 use Reiarseni\SanctumRefreshToken\ValueObjects\Session;
 
 /**
- * Serialises a Session for an API response.
- *
- * It is built over the Session value object rather than over the Eloquent row,
- * which is what makes it structurally impossible for this resource to leak a
- * token hash, a metadata hash or a row identifier: the value object never
- * carried them in the first place.
+ * Built over the Session value object rather than the Eloquent row, which makes
+ * it structurally impossible to leak a token hash, a metadata hash or a row id:
+ * the value object never carried them.
  *
  * @property-read Session $resource
  */

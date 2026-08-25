@@ -10,11 +10,9 @@ use Illuminate\Database\Eloquent\Model;
 use Reiarseni\SanctumRefreshToken\Models\RefreshToken;
 
 /**
- * The package's small amount of global, application-wide state: the model to
- * use for refresh token rows, and an optional context resolver registered as a
- * closure from a service provider.
- *
- * Everything else is resolved per request out of the container.
+ * The package's only application-wide state: the refresh token model, and an
+ * optional context resolver registered as a closure. Everything else is
+ * resolved per request out of the container.
  */
 final class SanctumRefreshToken
 {
@@ -25,8 +23,6 @@ final class SanctumRefreshToken
     private static ?Closure $contextResolver = null;
 
     /**
-     * Replace the model backing refresh token rows.
-     *
      * @param  class-string<RefreshToken>  $model
      */
     public static function useRefreshTokenModel(string $model): void
@@ -52,9 +48,6 @@ final class SanctumRefreshToken
         return RefreshToken::class;
     }
 
-    /**
-     * A new instance of the configured refresh token model.
-     */
     public static function newRefreshToken(): RefreshToken
     {
         $model = self::refreshTokenModel();
@@ -71,10 +64,7 @@ final class SanctumRefreshToken
     }
 
     /**
-     * Register the closure that reports the current issuance context.
-     *
-     * Registering one here takes precedence over the resolver named in the
-     * configuration file.
+     * Takes precedence over the resolver named in the configuration file.
      *
      * @param  (Closure(): (string|int|null))|null  $callback
      */
@@ -92,7 +82,7 @@ final class SanctumRefreshToken
     }
 
     /**
-     * Drop every piece of global state. Test helper; harmless in production.
+     * Test helper; harmless in production.
      */
     public static function flushState(): void
     {
@@ -100,9 +90,6 @@ final class SanctumRefreshToken
         self::$contextResolver = null;
     }
 
-    /**
-     * Whether a model can be issued Sanctum access tokens at all.
-     */
     public static function isTokenable(Model $model): bool
     {
         return method_exists($model, 'createToken') && method_exists($model, 'tokens');

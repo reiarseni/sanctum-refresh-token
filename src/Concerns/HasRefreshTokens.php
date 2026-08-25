@@ -15,19 +15,16 @@ use Reiarseni\SanctumRefreshToken\Sessions\SessionManager;
 use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 
 /**
- * Convenience surface on the tokenable model.
- *
- * Everything here delegates to RefreshTokenManager and SessionManager; the
- * trait exists so that a controller can write `$user->issueTokenPair()` instead
- * of resolving the manager by hand. Use it alongside Sanctum's own
- * `HasApiTokens`, which stays responsible for access tokens.
+ * Delegates to RefreshTokenManager and SessionManager, so a controller can
+ * write `$user->issueTokenPair()` instead of resolving them by hand. Use it
+ * alongside Sanctum's `HasApiTokens`, which still owns access tokens.
  *
  * @mixin Model
  */
 trait HasRefreshTokens
 {
     /**
-     * Every generation of every family this model holds, live or not.
+     * Every generation of every family, live or not.
      *
      * @return MorphMany<RefreshToken, $this>
      */
@@ -61,16 +58,13 @@ trait HasRefreshTokens
         );
     }
 
-    /**
-     * The session read model for this tokenable.
-     */
     public function sessions(): SessionManager
     {
         return app(SessionManager::class)->for($this);
     }
 
     /**
-     * Log this model out everywhere: every family and every access token.
+     * Log out everywhere: every family and every access token.
      */
     public function revokeAllTokenFamilies(RevocationReason $reason = RevocationReason::Logout): int
     {

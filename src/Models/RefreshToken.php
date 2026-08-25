@@ -14,11 +14,9 @@ use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
 use Reiarseni\SanctumRefreshToken\Support\Identifier;
 
 /**
- * One generation of one token family.
- *
- * This model is an implementation detail. Consumers read and manage families
- * through SessionManager and its Session value objects, so that the schema can
- * evolve without every column name becoming public API.
+ * One generation of one token family. An implementation detail: consumers read
+ * and manage families through SessionManager, so the schema can evolve without
+ * every column name becoming public API.
  *
  * @property int $id
  * @property string $family_uuid
@@ -44,8 +42,8 @@ use Reiarseni\SanctumRefreshToken\Support\Identifier;
 class RefreshToken extends Model
 {
     /**
-     * The token hash never leaves the package, not even by accident through a
-     * model that a consumer serialised into a response.
+     * So a consumer who serialises this model into a response cannot leak the
+     * hash by accident.
      *
      * @var list<string>
      */
@@ -74,8 +72,8 @@ class RefreshToken extends Model
     }
 
     /**
-     * Resolved from configuration so that a consumer can rename the table
-     * without forking the package. The name is validated as an identifier.
+     * Configurable so a consumer can rename the table without forking the
+     * package; validated as an identifier because it reaches SQL unbound.
      */
     public function getTable(): string
     {
@@ -96,9 +94,8 @@ class RefreshToken extends Model
     }
 
     /**
-     * The Sanctum access token minted alongside this generation. It is deleted
-     * the moment this generation is superseded, so the relation is null for
-     * every row but the family's live one.
+     * Deleted the moment this generation is superseded, so the relation is null
+     * for every row but the family's live one.
      *
      * @return BelongsTo<Model, $this>
      */
@@ -111,8 +108,8 @@ class RefreshToken extends Model
     }
 
     /**
-     * A row that can still be presented for rotation: neither rotated, nor
-     * revoked, nor past either expiry.
+     * Still presentable for rotation: neither rotated, revoked, nor past either
+     * expiry.
      *
      * @param  Builder<$this>  $query
      * @return Builder<$this>
@@ -129,8 +126,6 @@ class RefreshToken extends Model
     }
 
     /**
-     * Every row of one family, in generation order.
-     *
      * @param  Builder<$this>  $query
      * @return Builder<$this>
      */

@@ -7,22 +7,15 @@ namespace Reiarseni\SanctumRefreshToken\Support;
 use Reiarseni\SanctumRefreshToken\Exceptions\ConfigurationException;
 
 /**
- * Generation, formatting, hashing and timing-safe verification of the refresh
- * token secret.
- *
- * The plaintext token is `<row id>|<secret>`, the same shape Sanctum uses for
- * access tokens. Carrying the row identifier in the token means lookup is a
- * primary-key read rather than a scan over hashes, which in turn means the
- * secret comparison happens exactly once, in constant time, against exactly one
- * candidate.
+ * The plaintext token is `<row id>|<secret>`, the shape Sanctum uses. Carrying
+ * the id makes lookup a primary-key read rather than a scan over hashes, so the
+ * secret is compared exactly once, in constant time, against one candidate.
  */
 final class TokenSecret
 {
     /**
-     * The fewest random bytes the package will draw a secret from.
-     *
-     * 32 bytes is 256 bits of entropy, which is the point below which a stored
-     * hash starts being worth attacking offline.
+     * 256 bits: the point below which a stored hash starts being worth
+     * attacking offline.
      */
     public const MINIMUM_BYTES = 32;
 
@@ -43,8 +36,6 @@ final class TokenSecret
     }
 
     /**
-     * A fresh secret drawn from the cryptographically secure source.
-     *
      * `random_bytes` is the only generator used anywhere in this package.
      */
     public static function generate(int $bytes): string
@@ -53,8 +44,7 @@ final class TokenSecret
     }
 
     /**
-     * The value persisted in the token column. The secret itself is never
-     * stored, logged, or attached to an exception or an event.
+     * The secret itself is never stored, logged, or attached to an exception.
      */
     public static function hash(string $secret): string
     {
@@ -62,7 +52,7 @@ final class TokenSecret
     }
 
     /**
-     * The plaintext handed to the client exactly once, at issuance.
+     * Handed to the client exactly once, at issuance.
      */
     public static function format(int|string $id, string $secret): string
     {
@@ -70,10 +60,8 @@ final class TokenSecret
     }
 
     /**
-     * Split a presented token into its identifier and its secret.
-     *
-     * Returns null for anything that is not two non-empty parts with a numeric
-     * identifier, so a malformed token is rejected before any query runs.
+     * Null for anything that is not two non-empty parts with a numeric id, so a
+     * malformed token is rejected before any query runs.
      *
      * @return array{0: string, 1: string}|null
      */
@@ -92,9 +80,6 @@ final class TokenSecret
         return [$id, $secret];
     }
 
-    /**
-     * Timing-safe comparison of a presented secret against a stored hash.
-     */
     public static function verify(string $presentedSecret, string $storedHash): bool
     {
         return hash_equals($storedHash, self::hash($presentedSecret));

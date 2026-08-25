@@ -7,11 +7,8 @@ namespace Reiarseni\SanctumRefreshToken\Events;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A token family was opened at generation 1.
- *
- * Like every event in this package, it carries identifiers and never plaintext
- * token material: a listener that logs the whole event must not thereby write a
- * usable credential into a log file.
+ * Events carry identifiers, never plaintext token material: a listener that
+ * logs the whole event must not thereby write a usable credential to disk.
  */
 final class RefreshTokenIssued
 {

@@ -8,12 +8,9 @@ use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
 
 /**
- * The result of an issuance or a rotation: the only moment either plaintext
- * token exists outside the client.
- *
- * Neither plaintext is recoverable afterwards. The database holds a hash of the
- * refresh secret and Sanctum holds a hash of the access token, so a pair that
- * the caller drops on the floor is gone.
+ * The only moment either plaintext token exists outside the client. Neither is
+ * recoverable afterwards: storage holds only hashes, so a pair the caller drops
+ * on the floor is gone.
  *
  * @implements Arrayable<string, mixed>
  */

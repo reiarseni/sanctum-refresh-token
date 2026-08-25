@@ -18,22 +18,15 @@ use Reiarseni\SanctumRefreshToken\Support\Identifier;
 use stdClass;
 
 /**
- * Converts an existing refresh token table from a competing package into token
- * families, without logging anybody out.
+ * Converts another package's refresh tokens into families without logging
+ * anybody out — the cost that otherwise keeps people on a package they know is
+ * weak.
  *
- * The one reason to stay on a package with a known weakness is that leaving it
- * costs a forced logout of every user. This command removes that cost.
- *
- * It works because both supported source packages hash their secret the same
- * way this one does — `hash('sha256', $secret)` — and both hand the client a
- * plaintext of the form `<id>|<secret>`. What differs is which id they embed:
- * D076 embeds the refresh row's own id, albetnov embeds the *access token's*
- * id. So an imported row is inserted under exactly the id its source plaintext
- * embeds, which is what makes the token the user is already holding resolve
- * against the new table. A source row whose id is already taken is reported and
- * skipped rather than silently mangled.
- *
- * @phpstan-type SourceSchema array{table: string, id: string, secret: string, tokenable: bool}
+ * It works because both sources hash with `hash('sha256', $secret)` and hand
+ * out `<id>|<secret>`, exactly as this package does. What differs is which id
+ * they embed: D076 the refresh row's own, albetnov the access token's. Each row
+ * is therefore inserted under precisely the id its own plaintext embeds, which
+ * is what makes a token the user already holds resolve here.
  */
 class ImportCommand extends Command
 {
@@ -77,12 +70,11 @@ class ImportCommand extends Command
 
         $table = $this->sourceTable($source);
 
-        // albetnov's table is also called `refresh_tokens`. Reading and writing
-        // the same table would be nonsense, so it is refused rather than
-        // half-attempted; the consumer renames one of the two first.
+        // albetnov's table is also called `refresh_tokens`; reading and writing
+        // one table is nonsense, so it is refused rather than half-attempted.
         if ($table === SanctumRefreshToken::newRefreshToken()->getTable()) {
             $this->components->error(sprintf(
-                'The source table [%s] is this package\'s own table. Configure '
+                'The source table [%s] is this package\'s own. Set '
                 .'sanctum-refresh-token.table to a different name, or pass --table.',
                 $table,
             ));
@@ -96,12 +88,11 @@ class ImportCommand extends Command
             return self::FAILURE;
         }
 
+        // A half-matching schema is refused outright: guessing would write rows
+        // that silently authenticate nobody.
         $missing = $this->missingColumns($table, self::SOURCES[$source]['columns']);
 
         if ($missing !== []) {
-            // A schema that is not the one we know about is refused outright.
-            // Guessing at a half-matching table would write rows that silently
-            // authenticate nobody.
             $this->components->error(sprintf(
                 'The table [%s] does not match the %s schema; missing column(s): %s. Nothing was written.',
                 $table,
@@ -202,13 +193,9 @@ class ImportCommand extends Command
     }
 
     /**
-     * Move PostgreSQL's identity sequence past the ids the import just wrote.
-     *
-     * Imported rows carry explicit ids, because the id is what the user's
-     * existing plaintext token embeds. MySQL bumps AUTO_INCREMENT to match a
-     * manually inserted id; PostgreSQL leaves its sequence exactly where it
-     * was, so without this the very next issuance would try id 1 and collide
-     * with an imported row. Nothing to do on the other engines.
+     * Imported rows carry explicit ids. MySQL bumps AUTO_INCREMENT to match one;
+     * PostgreSQL leaves its identity sequence where it was, so without this the
+     * next issuance would try id 1 and collide with an imported row.
      */
     private function realignIdentitySequence(string $table): void
     {
@@ -228,10 +215,8 @@ class ImportCommand extends Command
     }
 
     /**
-     * Work out the target row identity for one source row.
-     *
-     * Returns null when the row cannot be attributed to a tokenable at all,
-     * which for albetnov means its access token is already gone.
+     * Null when the row cannot be attributed to a tokenable, which for albetnov
+     * means its access token is already gone.
      *
      * @param  class-string<Model>  $accessTokens
      * @return array{0: int, 1: string, 2: int|string, 3: int|null, 4: string, 5: list<string>}|null

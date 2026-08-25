@@ -46,24 +46,15 @@ use Reiarseni\SanctumRefreshToken\ValueObjects\TokenPair;
 /**
  * Opens, advances and closes token families.
  *
- * Two operations matter here and everything else supports them.
+ * `issue()` opens one; `rotate()` advances it inside a transaction, holding the
+ * family's anchor lock while it decides between a benign retry, reuse and a
+ * context mismatch.
  *
- * `issue()` opens a family: one row at generation 1, holding the family's
- * identity, its absolute expiry, its abilities and the context it was issued
- * in.
- *
- * `rotate()` advances one. It runs inside a transaction and takes an exclusive
- * row lock on the presented row *before* reading its state, which is what stops
- * two concurrent refreshes from both passing the "not yet rotated" check and
- * forking the family. Everything the rotation decides — benign retry, reuse,
- * context mismatch — is decided under that lock.
- *
- * One subtlety worth stating, because it looks like a mistake otherwise: the
- * failure paths inside the transaction *return* their exception rather than
- * throwing it, and the caller throws it after the transaction commits. Reuse
- * detection and strict context handling both revoke rows, and throwing from
- * inside the transaction would roll that revocation straight back — the family
- * would be reported as dead while remaining alive in the database.
+ * One subtlety, because it looks like a mistake otherwise: the failure paths
+ * inside the transaction *return* their exception rather than throwing it, and
+ * the caller throws it after the commit. Reuse detection and strict context
+ * handling both revoke rows, and throwing from inside would roll that
+ * revocation back — reporting the family dead while it stayed alive.
  */
 class RefreshTokenManager
 {
@@ -154,8 +145,6 @@ class RefreshTokenManager
     }
 
     /**
-     * Exchange a refresh token for the next generation of its family.
-     *
      * @param  list<string>|null  $abilities  a narrowing of the family's abilities; never a widening
      *
      * @throws SanctumRefreshTokenException on every refusal, each with its own code
@@ -183,9 +172,6 @@ class RefreshTokenManager
         return $outcome;
     }
 
-    /**
-     * Revoke every live row of a family and every access token it minted.
-     */
     public function revokeFamily(string $familyUuid, RevocationReason $reason = RevocationReason::Revoked): bool
     {
         return $this->connection()->transaction(
@@ -194,8 +180,6 @@ class RefreshTokenManager
     }
 
     /**
-     * Revoke every family a tokenable holds: a log-out-everywhere.
-     *
      * @return int the number of families revoked
      */
     public function revokeAllFamilies(Model $tokenable, RevocationReason $reason = RevocationReason::Logout): int
@@ -218,8 +202,7 @@ class RefreshTokenManager
     }
 
     /**
-     * Revoke the family a given refresh token belongs to. Used by a logout
-     * endpoint, which holds the refresh token rather than the family id.
+     * For a logout endpoint, which holds the token rather than the family id.
      */
     public function revokeByRefreshToken(string $plaintextRefreshToken, RevocationReason $reason = RevocationReason::Logout): bool
     {
@@ -233,8 +216,7 @@ class RefreshTokenManager
     }
 
     /**
-     * Resolve a plaintext refresh token to its row without locking or mutating
-     * anything. Returns null for malformed, unknown and wrong-secret alike.
+     * Null for malformed, unknown and wrong-secret alike.
      */
     public function resolve(string $plaintextRefreshToken): ?RefreshToken
     {
@@ -256,8 +238,6 @@ class RefreshTokenManager
     }
 
     /**
-     * The body of a rotation, executed under the row lock.
-     *
      * Returns the exception to throw rather than throwing it; see the class
      * docblock for why.
      *
@@ -339,8 +319,6 @@ class RefreshTokenManager
     }
 
     /**
-     * Mint the next generation and retire the one being replaced.
-     *
      * @param  list<string>  $abilities
      */
     private function advance(RefreshToken $row, Model $tokenable, array $abilities): TokenPair
@@ -397,8 +375,8 @@ class RefreshTokenManager
     }
 
     /**
-     * A consumed token was presented again. Only the elapsed time separates a
-     * lost-response retry from a stolen credential.
+     * Only elapsed time separates a lost-response retry from a stolen
+     * credential.
      */
     private function handleReplay(RefreshToken $row, Model $tokenable): SanctumRefreshTokenException
     {
@@ -447,12 +425,9 @@ class RefreshTokenManager
     }
 
     /**
-     * Compare the context the family was issued in against the current one.
-     *
-     * This is a plain value comparison performed by the package, not an Eloquent
-     * global scope. A scope that resolves its value from the container returns
-     * nothing when the container has nothing to give, and a scope that filters
-     * on nothing filters nothing — it fails open. This cannot.
+     * A plain value comparison, not an Eloquent global scope. A scope that
+     * resolves from an empty container filters on nothing, and a filter on
+     * nothing filters nothing — it fails open. This cannot.
      */
     private function verifyContext(RefreshToken $row, Model $tokenable): ?ContextMismatchException
     {
@@ -511,8 +486,8 @@ class RefreshTokenManager
     }
 
     /**
-     * Revoke every not-yet-revoked row of a family, and delete every access
-     * token any of its generations minted.
+     * Revokes every not-yet-revoked row and deletes every access token any
+     * generation minted.
      */
     private function revokeFamilyRows(string $familyUuid, RevocationReason $reason): bool
     {
@@ -578,8 +553,7 @@ class RefreshTokenManager
     }
 
     /**
-     * Hold the tokenable to the configured number of live families, retiring
-     * the least recently used one when it would be exceeded.
+     * Retires the least recently used family when the limit would be exceeded.
      */
     private function enforceFamilyLimit(Model $tokenable): void
     {
@@ -610,9 +584,6 @@ class RefreshTokenManager
     }
 
     /**
-     * Write one generation, returning the attributes plus the plaintext token
-     * that only exists during this call.
-     *
      * @param  array<string, mixed>  $attributes
      * @return array{row: RefreshToken, plaintext: string}
      */
@@ -695,11 +666,8 @@ class RefreshTokenManager
     }
 
     /**
-     * Narrow a value Eloquent hands back as `mixed` to a string.
-     *
-     * Column values and primary keys are `mixed` to the type system however
-     * well the schema is known, and the package only ever reads columns it
-     * declared itself: a uuid, a context discriminator, an id.
+     * Column values are `mixed` to the type system however well the schema is
+     * known, and the package only reads columns it declared itself.
      */
     private static function asString(mixed $value): string
     {
@@ -707,8 +675,7 @@ class RefreshTokenManager
     }
 
     /**
-     * `*` grants everything, so any request is a narrowing of it. Otherwise the
-     * requested set has to be contained in the granted one.
+     * `*` grants everything, so any request narrows it.
      *
      * @param  list<string>  $requested
      * @param  list<string>  $granted
@@ -780,8 +747,7 @@ class RefreshTokenManager
     }
 
     /**
-     * An explicit override wins; otherwise the configured number of minutes is
-     * measured from now. A null configured value means "no expiry".
+     * An override wins; otherwise the configured minutes are measured from now.
      */
     private function resolveExpiry(?DateTimeInterface $override, string $key, Carbon $now): ?Carbon
     {

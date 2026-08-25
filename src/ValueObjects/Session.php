@@ -8,16 +8,13 @@ use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Support\Carbon;
 
 /**
- * One live token family, seen from the outside.
+ * One live family, seen from outside. Consumers get sessions rather than
+ * Eloquent rows, so a column can be renamed without breaking anyone and
+ * `isCurrent` — which depends on the authenticating token, not on any column —
+ * is expressible at all.
  *
- * This is the package's public read model. Consumers get sessions, never
- * Eloquent rows, so that a column can be renamed without breaking anyone, and
- * so that `isCurrent` — which depends on which access token authenticated the
- * request, not on any column — is expressible at all.
- *
- * Readonly properties make mutation a fatal error rather than a silent no-op:
- * renaming goes through SessionManager::rename(), which validates the label and
- * writes it.
+ * Readonly makes mutation a fatal error rather than a silent no-op; renaming
+ * goes through SessionManager::rename().
  *
  * @implements Arrayable<string, mixed>
  */

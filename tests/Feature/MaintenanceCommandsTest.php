@@ -304,7 +304,7 @@ final class MaintenanceCommandsTest extends TestCase
     public function importing_from_this_packages_own_table_is_refused(): void
     {
         $this->artisan('sanctum-refresh:import', ['source' => 'albetnov'])
-            ->expectsOutputToContain('own table')
+            ->expectsOutputToContain("package's own")
             ->assertFailed();
     }
 

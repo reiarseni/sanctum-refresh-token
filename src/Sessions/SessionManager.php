@@ -21,12 +21,9 @@ use Reiarseni\SanctumRefreshToken\ValueObjects\Device;
 use Reiarseni\SanctumRefreshToken\ValueObjects\Session;
 
 /**
- * The read model over token families, and the operations that manage them.
- *
  * A family is a session. Its live generation carries everything a "your
- * devices" screen needs — label, device, recency — and this class assembles
- * that into immutable Session objects so an application never has to query the
- * package's table itself.
+ * devices" screen needs, assembled here into immutable Session objects so an
+ * application never queries the package's table itself.
  */
 class SessionManager
 {
@@ -40,8 +37,8 @@ class SessionManager
     ) {}
 
     /**
-     * Bind this manager to a tokenable. Returns a clone, so the container's
-     * shared instance is never bound to whoever asked first.
+     * A clone, so the container's shared instance is never bound to whoever
+     * asked first.
      */
     public function for(Model $tokenable): self
     {
@@ -52,9 +49,7 @@ class SessionManager
     }
 
     /**
-     * Every live session, most recently used first.
-     *
-     * @return Collection<int, Session>
+     * @return Collection<int, Session> most recently used first
      */
     public function all(): Collection
     {
@@ -66,8 +61,7 @@ class SessionManager
     }
 
     /**
-     * The session whose access token authenticated this request, or null
-     * outside an authenticated context.
+     * Null outside an authenticated context.
      */
     public function current(): ?Session
     {
@@ -81,8 +75,6 @@ class SessionManager
     }
 
     /**
-     * Rename a session. Only the label changes.
-     *
      * @throws SessionNotFoundException when the family is not this tokenable's
      * @throws InvalidSessionLabelException when the label is unusable
      */
@@ -108,9 +100,6 @@ class SessionManager
     }
 
     /**
-     * Revoke one session: every refresh token and every access token of that
-     * family.
-     *
      * @throws SessionNotFoundException when the family is not this tokenable's
      */
     public function revoke(string $familyUuid, RevocationReason $reason = RevocationReason::Revoked): bool
@@ -130,8 +119,6 @@ class SessionManager
     }
 
     /**
-     * Log the tokenable out everywhere.
-     *
      * @return int the number of sessions revoked
      */
     public function revokeAll(RevocationReason $reason = RevocationReason::Logout): int
@@ -148,8 +135,6 @@ class SessionManager
     }
 
     /**
-     * Log the tokenable out of every session but this one.
-     *
      * @return int the number of sessions revoked
      */
     public function revokeOthers(RevocationReason $reason = RevocationReason::Logout): int
@@ -171,10 +156,7 @@ class SessionManager
     }
 
     /**
-     * The live generation of each of the tokenable's live families, ordered by
-     * recency of use.
-     *
-     * @return Collection<int, RefreshToken>
+     * @return Collection<int, RefreshToken> one row per live family
      */
     private function liveRows(): Collection
     {
@@ -205,8 +187,8 @@ class SessionManager
     }
 
     /**
-     * Readable device metadata only exists when plaintext storage was on when
-     * the row was written; a keyed hash is deliberately not reversible.
+     * Readable only when plaintext storage was on as the row was written; a
+     * keyed hash is deliberately not reversible.
      */
     private function device(RefreshToken $row): Device
     {
@@ -220,10 +202,8 @@ class SessionManager
     }
 
     /**
-     * Which family the access token authenticating this request belongs to.
-     *
-     * Derived from request state, not from a column, which is precisely why the
-     * session read model exists.
+     * Derived from request state, not from a column — which is precisely why
+     * the session read model exists.
      */
     private function currentFamilyUuid(): ?string
     {
@@ -270,9 +250,8 @@ class SessionManager
     }
 
     /**
-     * The tokenable's rows, narrowed to the current issuance context when
-     * binding is on — a session issued in another tenant is not this tenant's
-     * to list or to end.
+     * Narrowed to the current issuance context when binding is on: a session
+     * issued in another tenant is not this tenant's to list or to end.
      *
      * @return Builder<RefreshToken>
      */

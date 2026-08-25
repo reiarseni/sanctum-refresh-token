@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Reiarseni\SanctumRefreshToken\Enums;
 
 /**
- * What the package does when it recognises the replay of a consumed refresh
- * token outside the grace window.
- *
  * The call always fails with `refresh_token_reused` and the detection event is
  * always dispatched; the strategy only decides what gets revoked.
  */

@@ -7,11 +7,8 @@ namespace Reiarseni\SanctumRefreshToken\Events;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * A consumed refresh token was replayed outside the grace window.
- *
- * The forensic context is the point of this event: the generation that was
- * replayed against the generation the family had reached tells you how far
- * behind the replaying party was, and therefore roughly when the fork happened.
+ * The replayed generation against the one the family had reached tells you how
+ * far behind the replaying party was, and so roughly when the fork happened.
  */
 final class RefreshTokenReuseDetected
 {

@@ -6,9 +6,6 @@ namespace Reiarseni\SanctumRefreshToken\Events;
 
 use Illuminate\Database\Eloquent\Model;
 
-/**
- * A family advanced by one generation.
- */
 final class RefreshTokenRotated
 {
     public function __construct(
