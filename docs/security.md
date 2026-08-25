@@ -48,6 +48,7 @@ a table with gaps in it rather than an image.
 | A live credential is never deleted by maintenance | A04 Insecure Design | `StorageLifecycleTest::no_live_row_is_ever_pruned_whatever_its_age` |
 | A configuration producing tokens that never expire is refused at boot | A05 Security Misconfiguration | `StorageLifecycleTest::both_lifetimes_null_is_refused_at_boot` |
 | The family lock survives maintenance, so rotation cannot lose its serialisation point | A01 Broken Access Control | `StorageLifecycleTest::the_anchor_of_a_live_family_survives_pruning` |
+| A password reset can revoke every session the user holds | A07 Authentication Failures | `SessionManagementTest::an_enabled_password_reset_listener_revokes_every_family` |
 
 † These skip with an explicit reason on SQLite, which has no real
 `SELECT ... FOR UPDATE`. They run for real against MySQL 8.4 and PostgreSQL 16
@@ -68,6 +69,7 @@ can.
 | **A10 Mishandling of Exceptional Conditions** | Every failure path here is typed and tested, but how your application responds to them is yours. |
 | **Rate limiting and brute force** | Not attempted. Use Laravel's throttle middleware on your token endpoints; the published routes stub does. |
 | **Two-factor authentication, password policy, account lockout** | Fortify's territory, not this package's. |
+| **Deciding when a credential change ends a session** | The package supplies `revokeOthers()`, `revokeAll()` and an opt-in listener for password resets, and revokes nothing by default. Which of the three cases applies is yours to decide — see [sessions.md](sessions.md). |
 | **Token binding (DPoP, mTLS)** | Bearer tokens only. RFC 9700 recommends sender-constrained tokens; the family model does not foreclose them, but they are not implemented. |
 
 ## Wire up the alarm

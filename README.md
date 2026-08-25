@@ -28,6 +28,11 @@ than deleted. Pruning, a growth report and a boot-time refusal of
 configurations whose rows could never be deleted keep the table from growing
 forever.
 
+One thing to decide early: **a password change ends no session unless you say
+so.** The package supplies the methods and an opt-in listener for password
+resets, and revokes nothing on its own — [sessions.md](docs/sessions.md) has the
+three cases and which to use.
+
 It is **not** an OAuth 2.0 server — no clients, no consent, no PKCE; that is
 [Passport](https://laravel.com/docs/passport). No two-factor auth, throttling or
 password policy; that is [Fortify](https://laravel.com/docs/fortify). No

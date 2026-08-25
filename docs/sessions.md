@@ -4,6 +4,52 @@ A token family *is* a session. One login opens one family; every refresh
 advances it; revoking it logs that device out. So the package exposes families
 as immutable `Session` objects, and you never touch its Eloquent models.
 
+## Read this first: credential changes
+
+**Changing a password does not end anyone's session unless you make it.** By
+default a user who changes their password stays signed in everywhere, and so
+does anyone holding a stolen token — which is the opposite of what the user
+believes just happened.
+
+The package will not do this behind your back, so it is your decision. These
+are the three cases, and they are not the same:
+
+| Situation | Do this | Why |
+|---|---|---|
+| **Voluntary change** — they proved they knew the old password | `revokeOthers()` | Keeps them signed in on the device in their hand, ends the rest |
+| **Reset by email** — "I forgot my password" | `revokeAll()` | You cannot know who followed that link. Preserving "the current session" preserves the attacker's if the attacker asked for the reset |
+| **Deactivation or ban** | `revokeAll()` | No exceptions |
+
+```php
+use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
+
+// Voluntary change, inside an authenticated request:
+$user->sessions()->revokeOthers(RevocationReason::Revoked);
+
+// Reset flow: no authenticated request, so nothing to preserve.
+$user->revokeAllTokenFamilies(RevocationReason::Revoked);
+```
+
+**Do not use `revokeOthers()` in a reset flow.** It identifies the current
+session from the access token authenticating the request, and a reset arrives
+without one — so it would revoke everything anyway, by accident rather than by
+intent. Say `revokeAll()` and mean it.
+
+For the reset case the package can do it for you:
+
+```php
+// config/sanctum-refresh-token.php
+'security' => [
+    'revoke_on_password_reset' => true,
+],
+```
+
+That listens for Laravel's `PasswordReset` event and revokes every family the
+user holds. Off by default, on is usually right.
+
+And note that `Auth::logoutOtherDevices()` only touches web sessions. It does
+nothing to API tokens.
+
 ## A working endpoint
 
 ```php
@@ -162,20 +208,11 @@ A sixth login revokes the least recently used family with the reason
 attack-driven revocation, which matters when you are reading that report during
 an incident. `null` disables the limit.
 
-## Revoking on password change or deactivation
+## Why none of this is automatic by default
 
-The package does not register listeners for you. Wire the recipe you want:
-
-```php
-use Reiarseni\SanctumRefreshToken\Enums\RevocationReason;
-
-// After a password change or reset:
-$user->revokeAllTokenFamilies(RevocationReason::Revoked);
-
-// On deactivation, keeping the current session alive is usually wrong:
-$user->sessions()->revokeAll();
-```
-
-This is deliberately not automatic. A package that logs your users out from a
-listener you never registered is a package that will surprise you at the worst
-possible moment.
+A package that logs your users out from a listener you never registered is a
+package that will surprise you at the worst possible moment — during an
+incident, when you are trying to work out what is happening. So every
+revocation here is something you asked for, either at the call site or by
+turning a flag on. See the table at the top of this page for which to use
+when.

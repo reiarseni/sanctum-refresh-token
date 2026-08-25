@@ -77,6 +77,17 @@ return [
     'security' => [
         'secret_bytes' => 32,
         'store_metadata_plaintext' => false,
+
+        /*
+         | Revoke every family a user holds when Laravel's PasswordReset event
+         | fires. Off by default -- the package logs nobody out from a listener
+         | you did not ask for -- but usually worth turning on: a user who
+         | resets their password believes they have just locked everyone else
+         | out, and without this they have not.
+         |
+         | A voluntary password change is a different case; see docs/sessions.md.
+         */
+        'revoke_on_password_reset' => false,
     ],
 
     /*

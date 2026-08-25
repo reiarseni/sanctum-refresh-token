@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Reiarseni\SanctumRefreshToken\Tests\Feature;
 
 use Error;
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Laravel\Sanctum\Sanctum;
@@ -14,6 +15,7 @@ use Reiarseni\SanctumRefreshToken\Exceptions\SessionNotFoundException;
 use Reiarseni\SanctumRefreshToken\Http\Resources\SessionResource;
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
 use Reiarseni\SanctumRefreshToken\SanctumRefreshToken;
+use Reiarseni\SanctumRefreshToken\SanctumRefreshTokenServiceProvider;
 use Reiarseni\SanctumRefreshToken\Tests\Fixtures\User;
 use Reiarseni\SanctumRefreshToken\Tests\TestCase;
 use Reiarseni\SanctumRefreshToken\ValueObjects\Session;
@@ -369,6 +371,44 @@ final class SessionManagementTest extends TestCase
         $this->assertArrayNotHasKey('user_agent_hash', $payload);
         $this->assertArrayNotHasKey('tokenable_id', $payload);
         $this->assertStringNotContainsString('"'.$row->getKey().'"', (string) $encoded);
+    }
+
+    #[Test]
+    public function a_password_reset_revokes_nothing_by_default(): void
+    {
+        config(['sanctum-refresh-token.security.revoke_on_password_reset' => false]);
+        (new SanctumRefreshTokenServiceProvider($this->app))->boot();
+
+        $user = $this->createUser();
+        $this->manager()->issue($user);
+
+        event(new PasswordReset($user));
+
+        $this->assertCount(1, $user->sessions()->all());
+    }
+
+    #[Test]
+    public function an_enabled_password_reset_listener_revokes_every_family(): void
+    {
+        config(['sanctum-refresh-token.security.revoke_on_password_reset' => true]);
+        (new SanctumRefreshTokenServiceProvider($this->app))->boot();
+
+        $user = $this->createUser();
+        $other = $this->createUser('other@example.com');
+
+        $this->manager()->issue($user);
+        $this->manager()->issue($user);
+        $untouched = $this->manager()->issue($other);
+
+        event(new PasswordReset($user));
+
+        // Every family, including the one that made the request: a reset
+        // arrives through an emailed link and you cannot know who followed it.
+        $this->assertCount(0, $user->sessions()->all());
+
+        // And nobody else's.
+        $this->assertCount(1, $other->sessions()->all());
+        $this->assertSame(2, $this->manager()->rotate($untouched->refreshToken)->generation);
     }
 
     /**

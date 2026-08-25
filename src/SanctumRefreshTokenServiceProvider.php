@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Reiarseni\SanctumRefreshToken;
 
+use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Config\Repository as Config;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\ServiceProvider;
 use Reiarseni\SanctumRefreshToken\Console\DoctorCommand;
 use Reiarseni\SanctumRefreshToken\Console\ImportCommand;
 use Reiarseni\SanctumRefreshToken\Console\PruneCommand;
 use Reiarseni\SanctumRefreshToken\Context\ContextResolverFactory;
 use Reiarseni\SanctumRefreshToken\Exceptions\ConfigurationException;
+use Reiarseni\SanctumRefreshToken\Listeners\RevokeFamiliesOnPasswordReset;
 use Reiarseni\SanctumRefreshToken\Sessions\SessionManager;
 use Reiarseni\SanctumRefreshToken\Support\Identifier;
 use Reiarseni\SanctumRefreshToken\Support\MetadataHasher;
@@ -32,11 +35,15 @@ class SanctumRefreshTokenServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        $settings = new Settings($this->app->make('config'));
+
         // Configuration that would weaken tokens or reach SQL unescaped fails
         // here, at boot, rather than at the first refresh in production.
         $this->assertConfigurationIsSafe($this->app->make('config'));
 
         $this->loadMigrationsFrom(__DIR__.'/../database/migrations');
+
+        $this->registerPasswordResetListener($settings);
 
         if (! $this->app->runningInConsole()) {
             return;
@@ -63,13 +70,29 @@ class SanctumRefreshTokenServiceProvider extends ServiceProvider
             __DIR__.'/../stubs/RefreshTokenController.php.stub' => app_path('Http/Controllers/Auth/RefreshTokenController.php'),
         ], 'sanctum-refresh-token-routes');
 
-        $this->registerSchedule(new Settings($this->app->make('config')));
+        $this->registerSchedule($settings);
 
         $this->commands([
             PruneCommand::class,
             DoctorCommand::class,
             ImportCommand::class,
         ]);
+    }
+
+    /**
+     * Log a user out everywhere when their password is reset.
+     *
+     * Off by default like everything else here, but worth turning on: a user
+     * who resets their password believes they have just locked everyone else
+     * out, and without this they have not.
+     */
+    private function registerPasswordResetListener(Settings $settings): void
+    {
+        if (! $settings->bool('sanctum-refresh-token.security.revoke_on_password_reset')) {
+            return;
+        }
+
+        Event::listen(PasswordReset::class, RevokeFamiliesOnPasswordReset::class);
     }
 
     /**
