@@ -18,29 +18,41 @@ little: the thief just keeps refreshing. [RFC 9700](https://datatracker.ietf.org
 has called reuse detection the baseline since January 2025, and no other Laravel
 package implements it. [See the comparison](docs/comparison.md).
 
+## Is this for you?
+
+| Your client | |
+|---|---|
+| **Mobile — native or Flutter** | Yes. The ideal case: Keychain and EncryptedSharedPreferences are real secure storage, with no XSS in the picture. |
+| **SPA on a different domain to the API** | Yes — but keep the refresh token in an httpOnly cookie your backend sets, never in `localStorage`. |
+| **SPA on the same domain or subdomain** | **Probably not.** Use [Sanctum's SPA mode](https://laravel.com/docs/sanctum#spa-authentication): session cookie plus CSRF. There are no tokens to rotate and nothing an XSS can steal. |
+| **Desktop (Electron, Tauri)** | Yes, with the OS credential store. |
+| **Service to service, API keys** | **No.** There is no user and no device that can lose a token, so rotation protects nothing and complicates your deploys. |
+| **Third-party access with consent** | No — that is OAuth 2.0. Use [Passport](https://laravel.com/docs/passport). |
+
+The rule of thumb: **this earns its place where you cannot use cookies.** A
+14-day refresh token in `localStorage` is worse than an httpOnly session cookie,
+because any XSS carries off two renewable weeks. If your SPA lives on your own
+domain, Laravel already has the better answer and it is not this one. Details in
+[the client guide](docs/clients/).
+
 ## Scope
 
-Beyond rotation and reuse detection, you get **sessions** to build a "your
-devices" screen on, **tenant binding** verified on every rotation by an explicit
-check rather than an Eloquent scope you hope was applied, and a retained
-lineage that makes "was this account compromised?" answerable next week rather
-than deleted. Pruning, a growth report and a boot-time refusal of
-configurations whose rows could never be deleted keep the table from growing
-forever.
+Beyond rotation and reuse detection: **sessions** to build a "your devices"
+screen on, **tenant binding** verified on every rotation by an explicit check
+rather than an Eloquent scope you hope was applied, and a retained lineage that
+makes "was this account compromised?" answerable next week rather than deleted.
+Pruning, a growth report and a boot-time refusal of configurations whose rows
+could never be deleted keep the table bounded.
+
+It does **no** two-factor auth, throttling or password policy — that is
+[Fortify](https://laravel.com/docs/fortify) — and no transparent refresh
+middleware, because shipping refresh material outside the token endpoint
+defeats the point.
 
 One thing to decide early: **a password change ends no session unless you say
 so.** The package supplies the methods and an opt-in listener for password
 resets, and revokes nothing on its own — [sessions.md](docs/sessions.md) has the
 three cases and which to use.
-
-It is **not** an OAuth 2.0 server — no clients, no consent, no PKCE; that is
-[Passport](https://laravel.com/docs/passport). No two-factor auth, throttling or
-password policy; that is [Fortify](https://laravel.com/docs/fortify). No
-transparent refresh middleware, because shipping refresh material outside the
-token endpoint defeats the point. And it never logs anyone out from a listener
-you did not register.
-
-If long-lived Sanctum tokens suit your threat model, you do not need this.
 
 > **Pre-1.0.** The public API may change between minor versions. Pin `^0.2` and
 > read the changelog before upgrading.

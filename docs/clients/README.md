@@ -36,8 +36,31 @@ strict rotation usable.
   minute early avoids most 401s entirely, and on a mobile network every avoided
   round trip is real latency.
 - **Store refresh tokens in the platform's secure storage** — Keychain,
-  EncryptedSharedPreferences, `flutter_secure_storage`. For browsers, prefer an
-  httpOnly cookie set by your own backend; `localStorage` is readable by any XSS.
+  EncryptedSharedPreferences, `flutter_secure_storage`.
+
+## In a browser, think twice
+
+`localStorage` is readable by any XSS, and a refresh token is a fourteen-day
+renewable credential. Putting one there is strictly worse than an httpOnly
+session cookie: the cookie cannot be read by script at all.
+
+So in a browser:
+
+1. **If your SPA is on the same domain or a subdomain of your API**, use
+   [Sanctum's SPA mode](https://laravel.com/docs/sanctum#spa-authentication)
+   instead — session cookie plus CSRF. You do not need this package, and that is
+   the honest answer.
+2. **If it is on a different origin** and cookies are not an option, keep the
+   **access token in memory** (a variable, not storage — it dies with the tab,
+   which is fine, you can refresh) and the **refresh token in an httpOnly cookie
+   your own backend sets** on the token endpoint. The client never touches it;
+   the browser attaches it to the refresh call.
+3. **Only if neither is possible** does `localStorage` come into it, and then
+   shorten `expiration.refresh_token` hard — hours, not weeks — and treat the
+   `RefreshTokenReuseDetected` event as a genuine alarm.
+
+The reference client below assumes it is handed a store; what that store is
+backed by is the decision above, and it matters more than the code.
 
 ## Implementations
 
