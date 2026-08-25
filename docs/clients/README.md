@@ -33,7 +33,8 @@ strict rotation usable.
 
 - **Retry once, never in a loop.** If the retried request 401s again, stop.
 - **Refresh proactively** when you know the access token's expiry: renewing a
-  minute early avoids most 401s entirely.
+  minute early avoids most 401s entirely, and on a mobile network every avoided
+  round trip is real latency.
 - **Store refresh tokens in the platform's secure storage** — Keychain,
   EncryptedSharedPreferences, `flutter_secure_storage`. For browsers, prefer an
   httpOnly cookie set by your own backend; `localStorage` is readable by any XSS.

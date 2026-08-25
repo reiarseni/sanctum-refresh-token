@@ -187,9 +187,7 @@ let (data, response) = try await client.send(
 
 ## Notes
 
-- **Storage.** Keychain, with `kSecAttrAccessibleAfterFirstUnlock` so background
+- **Storage.** Keychain with `kSecAttrAccessibleAfterFirstUnlock`, so background
   refreshes work. Never `UserDefaults` — it is a plist in the app container.
-- **App resume.** iOS suspends and resumes apps constantly, and a resume often
-  fires several requests at once. The actor's single-flight guarantee is what
-  keeps that from becoming several simultaneous refreshes.
-- **Proactive refresh.** Read `accessTokenExpiresAt` and renew ~60s early.
+- **App resume** fires several requests at once; the actor's isolation is what
+  stops that becoming several simultaneous refreshes.

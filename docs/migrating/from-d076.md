@@ -89,7 +89,7 @@ try {
 ```
 
 **6. Update your clients** to treat 409 as "wait for the refresh already in
-flight". See [the reference clients](clients/). Skipping this step is the one
+flight". See [the reference clients](../clients/). Skipping this step is the one
 way to make the migration feel worse than the status quo: without a
 single-flight mutex your clients will generate 409s they do not understand.
 

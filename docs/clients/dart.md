@@ -174,10 +174,7 @@ final orders = await dio.get<List<dynamic>>('/orders');
 
 ## Notes
 
-- **`QueuedInterceptor`, not `Interceptor`.** It serialises the interceptor
-  callbacks, which is a second layer of protection alongside `_inFlight`.
-- **Storage.** Use `flutter_secure_storage`; it maps to Keychain on iOS and
-  EncryptedSharedPreferences on Android. Never `SharedPreferences`.
-- **Proactive refresh.** Read `accessTokenExpiresAt` and renew ~60s early. Most
-  401s then never happen — which matters more on a mobile network, where every
-  avoided round trip is real latency.
+- **`QueuedInterceptor`, not `Interceptor`**: it serialises the callbacks, a
+  second layer alongside `_inFlight`.
+- **Storage.** `flutter_secure_storage` maps to Keychain and
+  EncryptedSharedPreferences. Never `SharedPreferences`.

@@ -119,7 +119,7 @@ after you change it; existing hashes stay hashed.
 Ask the client for the label instead, which needs no personal data at all:
 
 ```php
-$manager->issue($user, TokenConfig::make()->withName($request->input('device_name')));
+$manager->issue($user, name: $request->input('device_name'));
 ```
 
 ## `is_current`

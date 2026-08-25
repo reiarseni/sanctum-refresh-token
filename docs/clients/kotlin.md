@@ -191,13 +191,10 @@ val api = OkHttpClient.Builder()
 
 ## Notes
 
-- **Storage.** `EncryptedSharedPreferences` from `androidx.security:security-crypto`,
-  or the Keystore directly. Never plain `SharedPreferences`.
-- **The `failed != current` check matters.** Several requests can queue on the
-  mutex at once; the first refreshes, the rest find a token already renewed and
-  reuse it. Without that check they would each rotate in turn, and every one
-  after the first would replay a token consumed moments earlier.
-- **`runBlocking` is correct here.** OkHttp's `Authenticator` is a synchronous
-  API called on a background thread; this never touches the main thread.
-- **Proactive refresh.** Read `accessTokenExpiresAt` and renew ~60s early. On a
-  mobile network every avoided round trip is real latency.
+- **Storage.** `EncryptedSharedPreferences`, or the Keystore directly. Never
+  plain `SharedPreferences`.
+- **The `failed != current` check matters.** Several requests queue on the mutex;
+  the first refreshes and the rest reuse its result. Without it each would
+  rotate in turn, replaying a token consumed moments earlier.
+- **`runBlocking` is correct here**: OkHttp's `Authenticator` is a synchronous
+  API on a background thread.

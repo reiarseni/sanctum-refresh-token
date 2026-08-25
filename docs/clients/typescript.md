@@ -143,12 +143,8 @@ await api.get('/orders');
 
 ## Notes
 
-- **Storage.** In a browser, prefer an httpOnly cookie set by your own backend;
-  `localStorage` is readable by any XSS. In React Native, use
-  `expo-secure-store` or `react-native-keychain`.
-- **Multiple tabs.** Two tabs are two `inFlight` variables, so they can still
-  race each other — which is exactly what the grace window covers. If you want
-  to eliminate it, coordinate through a `BroadcastChannel` or a
-  `SharedWorker` and share one refresh across tabs.
-- **Proactive refresh.** Read `access_token_expires_at` and renew ~60s early.
-  Most 401s then never happen.
+- **Storage.** In a browser, prefer an httpOnly cookie set by your backend;
+  `localStorage` is readable by any XSS. In React Native, `expo-secure-store`.
+- **Multiple tabs** are two `inFlight` variables and can still race — which is
+  what the grace window covers. Share one refresh through a `BroadcastChannel`
+  to eliminate it.

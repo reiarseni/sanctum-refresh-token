@@ -1,9 +1,37 @@
 # Operations
 
+## How big does this table get?
+
+Reuse detection works because consumed rows are kept, so this package writes far
+more rows than the alternatives. That is a deliberate cost, and it is bounded —
+provided you prune. In steady state:
+
+```
+rows ≈ daily active users × rotations per day × (retention days + refresh token lifetime in days)
+```
+
+With the defaults (15-minute access tokens, 14-day refresh tokens, 7-day
+retention) and 20,000 daily active users, that is roughly **2 million rows**.
+Measured on PostgreSQL 16, that table is **977 MB**: 391 MB of data and 586 MB
+of indexes. Reproduce it with `.baseline/prune-plan.sh` in the repository.
+
+Three things make the number larger than you expect, and all three are worth
+knowing before you deploy:
+
+- **Rotation rate dominates.** Halving the access token lifetime doubles the
+  table. A 15-minute access token is 96 rotations per user per day.
+- **Indexes outweigh the data.** Seven indexes on a narrow table cost more than
+  the rows themselves; `unique(token)` alone is 238 MB of that 586 MB, because
+  the hash is stored as 64 hex characters.
+- **Retention adds a flat multiple.** Seven days of history on a fourteen-day
+  token is a third of the table.
+
+If that is too much, shorten the refresh token lifetime before you shorten
+retention: retention is what makes an incident investigable.
+
 ## Pruning
 
-Reuse detection works because consumed rows are kept. Kept rows accumulate, so
-something has to trim them.
+Kept rows accumulate, so something has to trim them.
 
 ```bash
 php artisan sanctum-refresh:prune
@@ -11,11 +39,14 @@ php artisan sanctum-refresh:prune --dry-run     # report only
 php artisan sanctum-refresh:prune --days=30     # override the window
 ```
 
-Only **terminal** rows are candidates — revoked, or past their own expiry — and
-only those whose terminal timestamp is older than the retention window. A live
-family can never be pruned into unusability, and deletion happens in chunks of
-1000 so a large backlog does not hold one enormous statement across a live
-table.
+Only **terminal** rows are candidates — rotated, revoked, or past their own
+expiry — and only those older than the retention window. Age is part of the
+predicate and not a nicety: a rotated row belonging to a family configured
+without a token expiry carries neither `revoked_at` nor `expires_at`, and
+without `created_at` nothing could ever reach it.
+
+Deletion happens in chunks of 1000, so a large backlog does not hold one
+enormous statement across a live table.
 
 ```php
 'prune' => [
@@ -31,6 +62,17 @@ data.
 
 ### Schedule it
 
+Either let the package register it:
+
+```php
+// config/sanctum-refresh-token.php
+'prune' => [
+    'schedule' => 'daily',   // a frequency method, or a cron expression
+],
+```
+
+Or do it yourself, if you prefer nothing in your scheduler you did not write:
+
 ```php
 // routes/console.php  (Laravel 11+)
 use Illuminate\Support\Facades\Schedule;
@@ -38,8 +80,26 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('sanctum-refresh:prune')->daily()->onOneServer();
 ```
 
+**Scheduling is off by default**, which means the default deployment does not
+prune and the table grows without limit. That default is deliberate — this
+package does not do recurring work nobody asked for — but it puts the
+responsibility on you. `sanctum-refresh:doctor` reports the row count and warns
+when rows have been eligible for deletion longer than the retention window, so
+the omission is at least visible.
+
 Safe to run against live traffic: it touches only terminal rows, so a family
 mid-rotation is never in its way.
+
+### What is never pruned
+
+- **Live rows**, whatever their age. Deleting one revokes a credential somebody
+  is still using. This is why the package refuses to boot when neither
+  `expiration.refresh_token` nor `expiration.family` is set: that combination
+  produces live rows with no horizon at all, which no retention policy could
+  ever clean up.
+- **The generation-1 row of a live family.** It carries the lock every rotation
+  of that family takes. It becomes prunable with the rest once nothing in the
+  family is rotatable any more.
 
 ## Diagnosing
 
@@ -133,7 +193,7 @@ Run the dry run first. Always.
 
 1. Listen for `RefreshTokenReuseDetected` and alert on it. See
    [security.md](security.md).
-2. Schedule `sanctum-refresh:prune` daily.
+2. Schedule `sanctum-refresh:prune` daily, through `prune.schedule` or your own scheduler. It is off by default.
 3. Put `sanctum-refresh:doctor --days=1` output somewhere a human reads weekly.
 4. Rate-limit your token endpoints. The published routes stub does; if you wrote
    your own, check.

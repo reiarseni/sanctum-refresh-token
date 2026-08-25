@@ -87,12 +87,8 @@ $token = TokenIssuer::refreshToken($refreshToken);   // returns Token|false
 
 // After
 use Reiarseni\SanctumRefreshToken\RefreshTokenManager;
-use Reiarseni\SanctumRefreshToken\ValueObjects\TokenConfig;
 
-$pair = app(RefreshTokenManager::class)->issue(
-    $user,
-    TokenConfig::make()->withName('api'),
-);
+$pair = app(RefreshTokenManager::class)->issue($user, name: 'api');
 
 $pair = app(RefreshTokenManager::class)->rotate($refreshToken);
 ```
@@ -123,7 +119,7 @@ into a single `refresh_token_invalid`, so the endpoint cannot be used to probe
 for which token ids exist.
 
 **6. Update your clients** to treat 409 as "wait for the refresh already in
-flight". See [the reference clients](clients/).
+flight". See [the reference clients](../clients/).
 
 **7. Move your config.**
 

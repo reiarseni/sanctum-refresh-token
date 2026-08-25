@@ -45,6 +45,9 @@ a table with gaps in it rather than an image.
 | Reuse, revocation and grace replays are all observable as events | A09 Logging and Alerting Failures | `ReuseDetectionTest::detection_dispatches_a_dedicated_event` |
 | Events never carry plaintext token material | A09 Logging and Alerting Failures | `RotationTest::rotation_dispatches_an_event_carrying_no_plaintext` |
 | Dependencies are resolved and tested at their lowest allowed versions | A06 Vulnerable and Outdated Components | CI job `lowest` in `.github/workflows/tests.yml` |
+| A live credential is never deleted by maintenance | A04 Insecure Design | `StorageLifecycleTest::no_live_row_is_ever_pruned_whatever_its_age` |
+| A configuration producing tokens that never expire is refused at boot | A05 Security Misconfiguration | `StorageLifecycleTest::both_lifetimes_null_is_refused_at_boot` |
+| The family lock survives maintenance, so rotation cannot lose its serialisation point | A01 Broken Access Control | `StorageLifecycleTest::the_anchor_of_a_live_family_survives_pruning` |
 
 † These skip with an explicit reason on SQLite, which has no real
 `SELECT ... FOR UPDATE`. They run for real against MySQL 8.4 and PostgreSQL 16
