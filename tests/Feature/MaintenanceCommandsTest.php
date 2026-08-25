@@ -180,6 +180,25 @@ final class MaintenanceCommandsTest extends TestCase
     }
 
     #[Test]
+    public function doctor_states_the_grace_replay_mode_only_when_it_is_tolerant(): void
+    {
+        config(['sanctum-refresh-token.rotation.on_grace_replay' => 'reject']);
+
+        $this->artisan('sanctum-refresh:doctor')
+            ->doesntExpectOutputToContain('Grace-replay mode')
+            ->assertSuccessful();
+
+        config(['sanctum-refresh-token.rotation.on_grace_replay' => 'reissue']);
+
+        // A reuse count of zero means something different under this mode, and
+        // the report is read during an incident.
+        $this->artisan('sanctum-refresh:doctor')
+            ->expectsOutputToContain('reissue')
+            ->expectsOutputToContain('reuse detection cannot see it')
+            ->assertSuccessful();
+    }
+
+    #[Test]
     public function doctor_warns_when_grace_replays_are_not_being_recorded(): void
     {
         config(['sanctum-refresh-token.observability.record_grace_replays' => false]);

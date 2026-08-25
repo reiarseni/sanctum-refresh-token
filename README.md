@@ -148,6 +148,13 @@ ship with the package: [TypeScript](docs/clients/typescript.md),
 [Kotlin](docs/clients/kotlin.md). Use one. A client without a refresh mutex
 generates 409s all day.
 
+If you have a client you genuinely cannot fix — a shipped binary, a
+third-party SDK — `rotation.on_grace_replay => 'reissue'` answers a replay
+inside the window with a fresh pair instead of a 409, as Auth0, Okta, Cognito
+and Ory all do. It is off by default and it costs you reuse detection for the
+length of the window; [the client guide](docs/clients/) says exactly what you
+are trading.
+
 ## Documentation
 
 - [Sessions and "your devices"](docs/sessions.md)

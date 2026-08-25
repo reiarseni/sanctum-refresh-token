@@ -27,7 +27,49 @@ consumed milliseconds earlier. Inside the grace window that is four 409s. Set
 out by their own app opening a screen.
 
 The single-flight mutex is not an optimisation. It is the thing that makes
-strict rotation usable.
+strict rotation usable. The package's own test suite demonstrates it: two
+callers sharing one in-flight refresh produce one request, no 409, and a single
+new generation.
+
+## If you cannot fix the client
+
+Sometimes the client is a shipped binary, or an SDK you do not control. For that
+case the package can answer a replay inside the window with a fresh pair instead
+of a 409:
+
+```php
+// config/sanctum-refresh-token.php
+'rotation' => [
+    'on_grace_replay' => 'reissue',
+],
+```
+
+Every large identity provider defaults to this behaviour — Auth0 calls it the
+rotation overlap period, Okta allows 0–60 seconds with 30 as the default,
+Cognito allows up to 60, Ory Hydra up to five minutes. They serve estates of
+legacy clients they do not control, and compatibility wins.
+
+Ory is the one that states the price plainly, and it applies here word for word:
+
+> Enabling graceful token rotation **effectively disables this security feature**
+> for the duration of the grace period, because the same refresh token can be
+> redeemed multiple times without triggering reuse detection.
+
+They call it *"a workaround, not a best practice"*, and so does this package.
+Concretely, inside the window:
+
+- A replay gets a **working credential**. If the party replaying is an attacker,
+  you have just helped them, and the alarm does not sound.
+- Every redemption writes a row. A client looping without a mutex will grow the
+  table; see [operations](../operations.md) for pruning.
+- Outside the window nothing changes: a replay is still reuse, and the family
+  still dies.
+
+`sanctum-refresh:doctor` keeps counting grace replays under this mode, which
+matters more here than under the default — the client no longer sees an error,
+so the report is the only place the underlying problem is still visible.
+
+Fix the client if you can. This is the door for when you cannot.
 
 ## Also
 

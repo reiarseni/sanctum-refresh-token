@@ -66,9 +66,35 @@ class DoctorCommand extends Command
             );
         }
 
+        $this->reportGraceReplayMode($settings);
         $this->reportStorage($settings);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * State the grace-replay mode when it is the tolerant one.
+     *
+     * Not a scolding: they turned it on deliberately. But a diagnostic read
+     * during an incident should say that reuse detection is blind inside the
+     * window, because that is exactly the fact someone reading a report of zero
+     * reuse detections needs in front of them.
+     */
+    private function reportGraceReplayMode(Settings $settings): void
+    {
+        if ($settings->string('sanctum-refresh-token.rotation.on_grace_replay', 'reject') !== 'reissue') {
+            return;
+        }
+
+        $window = $settings->int('sanctum-refresh-token.rotation.reuse_grace_period', 10);
+
+        $this->newLine();
+        $this->components->twoColumnDetail('Grace-replay mode', 'reissue');
+        $this->components->warn(sprintf(
+            'A replay within %d second(s) is answered with a fresh pair, so reuse '
+            .'detection cannot see it. Reuse counts above exclude that window.',
+            $window,
+        ));
     }
 
     /**

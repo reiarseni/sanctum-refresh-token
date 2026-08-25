@@ -10,6 +10,45 @@ versions.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-25
+
+### Added
+
+- `rotation.on_grace_replay` chooses what a replay inside the grace window
+  produces: `reject` (the default and unchanged behaviour, a 409 carrying
+  `rotation_in_progress`) or `reissue` (a fresh pair, as Auth0, Okta, Cognito
+  and Ory Hydra all do).
+
+  `reissue` exists for a client you genuinely cannot fix, and Ory states its
+  cost better than a paraphrase would: it "effectively disables this security
+  feature for the duration of the grace period, because the same refresh token
+  can be redeemed multiple times without triggering reuse detection". Inside
+  the window it hands a working credential to whoever replays the consumed
+  token. Off by default.
+- `sanctum-refresh:doctor` states the grace-replay mode when it is `reissue`,
+  because a reuse count of zero means something different under it.
+- A test that loads `stubs/RefreshTokenController.php.stub` — the file an
+  integrator publishes — and exercises its HTTP contract, so an edit breaking
+  the 409 mapping fails the build. Verified by breaking it deliberately.
+- A test demonstrating that a single-flight client sees no 409 at all, rather
+  than only documenting that it would not.
+
+### Fixed
+
+- Reissuing a replay advances from the family's live generation rather than
+  from the replayed row. Advancing from the replayed row would have minted a
+  second row at a generation the family already held — two live tokens at the
+  same generation, the exact fork the row lock exists to prevent. Found while
+  implementing the mode; a regression test now asserts no two rows of a family
+  ever share a generation.
+
+### Documentation
+
+- The comparison covers `mohamedgaber-intake40/sanctum-refresh-token` (v3.0,
+  September 2024, 45 stars), which takes a different approach: no table of its
+  own, abilities as markers, and — verified by reading its `src/` — no rotation
+  and no revocation at all. A refresh token there stays valid until it expires.
+
 ## [0.2.0] - 2026-08-25
 
 ### Changed — breaking
@@ -107,6 +146,7 @@ versions.
   carries unpatched security advisories and Composer's default policy refuses to
   install the line. Prefer Laravel 12 or 13.
 
-[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/reiarseni/sanctum-refresh-token/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/reiarseni/sanctum-refresh-token/releases/tag/v0.1.0
