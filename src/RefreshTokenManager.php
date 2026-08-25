@@ -291,7 +291,7 @@ class RefreshTokenManager
         // Checked before expiry: a replayed token is evidence of a compromise
         // whether or not it has since expired, and that reading has to win.
         if ($row->isRotated()) {
-            return $this->handleReplay($row, $tokenable);
+            return $this->handleReplay($row, $tokenable, $requestedAbilities);
         }
 
         if ($row->isExpired()) {
@@ -377,14 +377,20 @@ class RefreshTokenManager
     /**
      * Only elapsed time separates a lost-response retry from a stolen
      * credential.
+     *
+     * @param  list<string>|null  $requestedAbilities
      */
-    private function handleReplay(RefreshToken $row, Model $tokenable): SanctumRefreshTokenException
+    private function handleReplay(RefreshToken $row, Model $tokenable, ?array $requestedAbilities): TokenPair|SanctumRefreshTokenException
     {
         $rotatedAt = $row->rotated_at ?? Carbon::now();
         $elapsed = max(0.0, (float) (Carbon::now()->getPreciseTimestamp(3) - $rotatedAt->getPreciseTimestamp(3)) / 1000);
         $grace = $this->graceSeconds();
 
         if ($grace > 0 && $elapsed <= $grace) {
+            // Dispatched under both modes. Under `reissue` the client sees no
+            // error at all, so this event and the doctor report it feeds are
+            // the only place the racing client is still visible -- and that is
+            // exactly the diagnostic that explains why the mode was needed.
             $this->events->dispatch(new RefreshTokenReplayedInGracePeriod(
                 $tokenable,
                 $row->family_uuid,
@@ -393,6 +399,25 @@ class RefreshTokenManager
             ));
 
             $this->graceReplays->record($row, $elapsed);
+
+            if ($this->reissuesOnGraceReplay()) {
+                // Advance from the family's live generation, not from the row
+                // that was replayed. Rotating the replayed row would mint a
+                // second row at a generation the family already holds -- two
+                // live tokens at the same generation, which is the fork this
+                // package exists to prevent. The winner of the race is what
+                // the family currently is, and that is what advances.
+                $live = $this->liveGenerationOf($row->family_uuid) ?? $row;
+
+                $granted = $live->abilities ?? $this->defaultAbilities();
+                $abilities = $requestedAbilities ?? $granted;
+
+                if (! $this->isSubsetOfAbilities($abilities, $granted)) {
+                    return AbilitiesEscalationException::make($abilities, $granted);
+                }
+
+                return $this->advance($live, $tokenable, $abilities);
+            }
 
             return RotationInProgressException::make($row->family_uuid, $elapsed);
         }
@@ -722,6 +747,31 @@ class RefreshTokenManager
     private function graceSeconds(): int
     {
         return $this->settings->int('sanctum-refresh-token.rotation.reuse_grace_period', 10);
+    }
+
+    /**
+     * The family's newest rotatable row, if it still has one.
+     *
+     * Already locked: the caller holds the family anchor.
+     */
+    private function liveGenerationOf(string $familyUuid): ?RefreshToken
+    {
+        return $this->query()
+            ->where('family_uuid', $familyUuid)
+            ->live()
+            ->orderByDesc('generation')
+            ->first();
+    }
+
+    /**
+     * Whether a replay inside the grace window is answered with a fresh pair.
+     *
+     * Anything but the exact string `reissue` means refuse: a typo in a config
+     * file must not silently weaken the package.
+     */
+    private function reissuesOnGraceReplay(): bool
+    {
+        return $this->settings->string('sanctum-refresh-token.rotation.on_grace_replay', 'reject') === 'reissue';
     }
 
     private function reuseStrategy(): ReuseStrategy

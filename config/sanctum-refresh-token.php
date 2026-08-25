@@ -55,6 +55,27 @@ return [
 
     'rotation' => [
         'reuse_grace_period' => 10,
+
+        /*
+         | What a replay inside the grace window produces.
+         |
+         | 'reject'  fails with rotation_in_progress (409). The client is
+         |           expected to wait for the refresh it already started; see
+         |           docs/clients/ for implementations that do.
+         | 'reissue' advances the family and returns a fresh pair, as Auth0,
+         |           Okta, Cognito and Ory Hydra all do.
+         |
+         | Ory documents the cost of 'reissue' plainly, and it applies here
+         | word for word: it "effectively disables this security feature for
+         | the duration of the grace period, because the same refresh token can
+         | be redeemed multiple times without triggering reuse detection".
+         | They call it "a workaround, not a best practice".
+         |
+         | Inside the window, 'reissue' hands a working credential to whoever
+         | presents the consumed token — an attacker included. Turn it on when
+         | you have a client you genuinely cannot fix, not to quiet an error.
+         */
+        'on_grace_replay' => 'reject',
         'reuse_strategy' => ReuseStrategy::RevokeFamily,
         'max_concurrent_families' => null,
         'default_abilities' => ['*'],
